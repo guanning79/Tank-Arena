@@ -1,0 +1,41 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Browser cache
+*.cache
+
+# Temporary files
+*.tmp
+*.temp
+
+# Tests
+tests/
+
+# Intermediate outputs
+intermediate/

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Arena</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui-overlay">
+            <div id="score">Score: 0</div>
+            <div id="health">Health: 100</div>
+        </div>
+        <div id="start-screen">
+            <h1>Tank Arena</h1>
+            <p>Use WASD or Arrow Keys to move</p>
+            <p>Use Mouse to aim and shoot</p>
+            <button id="start-button">Start Game</button>
+        </div>
+        <div id="game-over-screen" class="hidden">
+            <h1>Game Over</h1>
+            <p id="final-score">Final Score: 0</p>
+            <button id="restart-button">Play Again</button>
+        </div>
+    </div>
+    <script src="js/input.js"></script>
+    <script src="js/tank.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>

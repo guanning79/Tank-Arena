@@ -1,0 +1,11 @@
+# Tank Arena Map Editor Requirements
+# Python 3.7+ with tkinter (usually included with Python)
+
+# Optional but recommended for performance:
+# Pillow (PIL) - Significantly faster image generation for large maps (2048x2048)
+# Install with: pip install Pillow
+
+# If tkinter is not available, install it:
+# - Ubuntu/Debian: sudo apt-get install python3-tk
+# - macOS: tkinter should be included with Python
+# - Windows: tkinter is included with Python
