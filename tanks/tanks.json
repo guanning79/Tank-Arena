@@ -1,0 +1,70 @@
+[
+  {
+    "tank_label": "normal_pl",
+    "texture": "textures/normal_player.png",
+    "speed": 2,
+    "tank_hit_point": 1,
+    "bound_min": {
+      "x": 3,
+      "y": 3
+    },
+    "bound_max": {
+      "x": 28,
+      "y": 28
+    },
+    "shell_size": 2,
+    "shell_speed": 4,
+    "shell_color": "green"
+  },
+  {
+    "tank_label": "speedy_pl",
+    "texture": "textures/speedy.png",
+    "speed": 4,
+    "tank_hit_point": 1,
+    "bound_min": {
+      "x": 3,
+      "y": 0
+    },
+    "bound_max": {
+      "x": 28,
+      "y": 30
+    },
+    "shell_size": 1,
+    "shell_speed": 6,
+    "shell_color": "green"
+  },
+  {
+    "tank_label": "heavy_pl",
+    "texture": "textures/heavy.png",
+    "speed": 3,
+    "tank_hit_point": 2,
+    "bound_min": {
+      "x": 2,
+      "y": 1
+    },
+    "bound_max": {
+      "x": 29,
+      "y": 30
+    },
+    "shell_size": 2,
+    "shell_speed": 5,
+    "shell_color": "red"
+  },
+  {
+    "tank_label": "normal_en",
+    "texture": "textures/normal_en.png",
+    "speed": 2,
+    "tank_hit_point": 1,
+    "bound_min": {
+      "x": 3,
+      "y": 2
+    },
+    "bound_max": {
+      "x": 28,
+      "y": 31
+    },
+    "shell_size": 2,
+    "shell_speed": 4,
+    "shell_color": "green"
+  }
+]

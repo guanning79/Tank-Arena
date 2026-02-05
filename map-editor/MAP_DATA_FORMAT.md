@@ -10,7 +10,7 @@ Maps are stored in JSON format with metadata and tile data. The format is design
 {
   "version": "1.0",
   "mapSize": 512,
-  "tileSize": 8,
+  "tileSize": 16,
   "tiles": [
     [0, 1, 2, ...],
     [1, 0, 3, ...],
@@ -33,7 +33,7 @@ Maps are stored in JSON format with metadata and tile data. The format is design
 
 ### `tileSize` (integer)
 - Size of each tile in pixels
-- Current value: `8`
+- Current value: `MAP_TILE_SIZE` in `js/global-define.js` (default `16`)
 - Total tiles per side: `mapSize / tileSize`
 
 ### `tiles` (2D array)
@@ -80,7 +80,7 @@ Maps are stored in JSON format with metadata and tile data. The format is design
 {
   "version": "1.0",
   "mapSize": 512,
-  "tileSize": 8,
+  "tileSize": 16,
   "tiles": [
     [0, 0, 0, 1, 1, 0, 0, 0],
     [0, 3, 3, 1, 1, 3, 3, 0],
@@ -191,7 +191,7 @@ Examples:
 A valid map file must:
 1. Have `version`, `mapSize`, `tileSize`, and `tiles` fields
 2. `mapSize` must be 512, 1024, or 2048
-3. `tileSize` must be 8
+3. `tileSize` must be `MAP_TILE_SIZE` (default `16`)
 4. `tiles` must be a 2D array with dimensions `mapSize × mapSize`
 5. All tile values must be integers between 0 and 7
 

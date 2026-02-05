@@ -81,7 +81,7 @@ const TILE_PROPERTIES = {
  */
 async function loadMap(filename) {
     try {
-        const response = await fetch(filename);
+        const response = await fetch(filename, { cache: 'no-store' });
         if (!response.ok) {
             throw new Error(`Failed to load map: ${response.statusText}`);
         }
@@ -97,18 +97,24 @@ async function loadMap(filename) {
             throw new Error(`Invalid map size: ${mapData.mapSize}`);
         }
         
-        if (mapData.tileSize !== 8) {
+        const expectedTileSize = typeof MAP_TILE_SIZE !== 'undefined' ? MAP_TILE_SIZE : 8;
+        if (mapData.tileSize !== expectedTileSize) {
             throw new Error(`Invalid tile size: ${mapData.tileSize}`);
         }
         
+        const tilesPerSide = mapData.mapSize / mapData.tileSize;
+        if (!Number.isInteger(tilesPerSide)) {
+            throw new Error(`Invalid map size/tile size ratio: ${mapData.mapSize}/${mapData.tileSize}`);
+        }
+        
         // Validate dimensions
-        if (mapData.tiles.length !== mapData.mapSize) {
-            throw new Error(`Map height mismatch: expected ${mapData.mapSize}, got ${mapData.tiles.length}`);
+        if (mapData.tiles.length !== tilesPerSide) {
+            throw new Error(`Map height mismatch: expected ${tilesPerSide}, got ${mapData.tiles.length}`);
         }
         
         for (let row = 0; row < mapData.tiles.length; row++) {
-            if (mapData.tiles[row].length !== mapData.mapSize) {
-                throw new Error(`Map width mismatch at row ${row}: expected ${mapData.mapSize}, got ${mapData.tiles[row].length}`);
+            if (mapData.tiles[row].length !== tilesPerSide) {
+                throw new Error(`Map width mismatch at row ${row}: expected ${tilesPerSide}, got ${mapData.tiles[row].length}`);
             }
         }
         
@@ -128,6 +134,7 @@ class MapData {
         this.mapSize = mapData.mapSize;
         this.tileSize = mapData.tileSize;
         this.tiles = mapData.tiles;
+        this.tilesPerSide = mapData.mapSize / mapData.tileSize;
     }
     
     /**
@@ -137,7 +144,7 @@ class MapData {
      * @returns {number} Tile ID
      */
     getTile(row, col) {
-        if (row < 0 || row >= this.mapSize || col < 0 || col >= this.mapSize) {
+        if (row < 0 || row >= this.tilesPerSide || col < 0 || col >= this.tilesPerSide) {
             return null; // Out of bounds
         }
         return this.tiles[row][col];
@@ -231,8 +238,8 @@ class MapData {
      */
     getSpawnPoints(spawnType) {
         const spawns = [];
-        for (let row = 0; row < this.mapSize; row++) {
-            for (let col = 0; col < this.mapSize; col++) {
+        for (let row = 0; row < this.tilesPerSide; row++) {
+            for (let col = 0; col < this.tilesPerSide; col++) {
                 if (this.getTile(row, col) === spawnType) {
                     spawns.push({ row, col });
                 }
@@ -246,8 +253,8 @@ class MapData {
      * @returns {{row: number, col: number}|null} HQ coordinates or null
      */
     getPlayerHQ() {
-        for (let row = 0; row < this.mapSize; row++) {
-            for (let col = 0; col < this.mapSize; col++) {
+        for (let row = 0; row < this.tilesPerSide; row++) {
+            for (let col = 0; col < this.tilesPerSide; col++) {
                 if (this.getTile(row, col) === TILE_TYPES.PLAYER_HQ) {
                     return { row, col };
                 }

@@ -7,24 +7,36 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div id="game-container">
-        <canvas id="gameCanvas"></canvas>
-        <div id="ui-overlay">
-            <div id="score">Score: 0</div>
-            <div id="health">Health: 100</div>
+    <div id="main-layout">
+        <div id="game-container">
+            <div id="title-bar">
+                <div id="score">Score: 0</div>
+                <div id="health">Health: 100</div>
+                <button id="scale-toggle" type="button">Scale: Off</button>
+                <button id="debug-toggle" type="button">Debug: Off</button>
+            </div>
+            <canvas id="gameCanvas"></canvas>
+            <div id="start-screen">
+                <h1>Tank Arena</h1>
+                <p>Use WASD or Arrow Keys to move</p>
+                <p>Use Mouse to aim and shoot</p>
+                <button id="start-button">Start Game</button>
+            </div>
+            <div id="game-over-screen" class="hidden">
+                <h1>Game Over</h1>
+                <p id="final-score">Final Score: 0</p>
+                <button id="restart-button">Play Again</button>
+            </div>
         </div>
-        <div id="start-screen">
-            <h1>Tank Arena</h1>
-            <p>Use WASD or Arrow Keys to move</p>
-            <p>Use Mouse to aim and shoot</p>
-            <button id="start-button">Start Game</button>
-        </div>
-        <div id="game-over-screen" class="hidden">
-            <h1>Game Over</h1>
-            <p id="final-score">Final Score: 0</p>
-            <button id="restart-button">Play Again</button>
+        <div id="debug-panel" class="hidden">
+            <div class="debug-title">Debug Info</div>
+            <div id="player-tile-pos">Tile: (0, 0)</div>
+            <pre id="spawn-debug-log" class="debug-log"></pre>
         </div>
     </div>
+    <script src="js/global-define.js"></script>
+    <script src="js/game-config.js"></script>
+    <script src="js/map-loader.js"></script>
     <script src="js/input.js"></script>
     <script src="js/tank.js"></script>
     <script src="js/game.js"></script>

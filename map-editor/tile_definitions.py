@@ -3,11 +3,35 @@
 Tile/Landscape Element Definitions for Tank Arena Map Editor
 
 This module defines all tile types, their properties, and map-related constants.
-Each tile represents an 8x8 pixel grid element in the map.
+Each tile represents a MAP_TILE_SIZE x MAP_TILE_SIZE pixel grid element in the map.
 """
 
-# Tile size in pixels (each tile is 16x16 pixels)
-TILE_SIZE = 16
+import re
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+GLOBAL_DEFINE_FILE = REPO_ROOT / "js" / "global-define.js"
+
+
+def load_global_int(name: str, fallback: int) -> int:
+    if not GLOBAL_DEFINE_FILE.exists():
+        return fallback
+    try:
+        content = GLOBAL_DEFINE_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+    match = re.search(rf"{re.escape(name)}\s*=\s*(\d+)", content)
+    if not match:
+        return fallback
+    try:
+        value = int(match.group(1))
+    except ValueError:
+        return fallback
+    return value if value > 0 else fallback
+
+
+# Tile size in pixels (each tile is MAP_TILE_SIZE x MAP_TILE_SIZE pixels)
+TILE_SIZE = load_global_int("MAP_TILE_SIZE", 16)
 
 # Available map sizes (in pixels)
 # Each map is square: mapSize × mapSize pixels

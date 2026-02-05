@@ -77,6 +77,16 @@ class InputHandler {
         
         return { dx, dy };
     }
+
+    getControlEvents() {
+        const events = [];
+        if (this.isKeyPressed('w') || this.isKeyPressed('arrowup')) events.push('move_up');
+        if (this.isKeyPressed('s') || this.isKeyPressed('arrowdown')) events.push('move_down');
+        if (this.isKeyPressed('a') || this.isKeyPressed('arrowleft')) events.push('move_left');
+        if (this.isKeyPressed('d') || this.isKeyPressed('arrowright')) events.push('move_right');
+        if (this.isMouseClicked()) events.push('fire');
+        return events;
+    }
     
     getMousePosition() {
         return { x: this.mouse.x, y: this.mouse.y };
