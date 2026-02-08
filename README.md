@@ -14,12 +14,13 @@ An HTML5 tank arena game built with vanilla JavaScript. Control your tank, shoot
 
 ## How to Play
 
-1. Open `index.html` in a web browser
-2. Click "Start Game"
-3. Use **WASD** or **Arrow Keys** to move your tank
-4. Use **Mouse** to aim
-5. **Left Click** to shoot
-6. Survive as long as possible and defeat enemies!
+1. Start the game server (see "Local Dev Server")
+2. Open `http://127.0.0.1:5173` in a web browser
+3. Click "Start Game"
+4. Use **WASD** or **Arrow Keys** to move your tank
+5. Use **Mouse** to aim
+6. **Left Click** to shoot
+7. Survive as long as possible and defeat enemies!
 
 ## Game Mechanics
 
@@ -34,6 +35,7 @@ An HTML5 tank arena game built with vanilla JavaScript. Control your tank, shoot
 
 ```
 Tank Arena/
+├── start-dev.bat        # Start backend + game server (Windows)
 ├── index.html          # Main HTML file
 ├── css/
 │   └── style.css       # Game styling
@@ -41,8 +43,25 @@ Tank Arena/
 │   ├── game.js         # Main game loop and game logic
 │   ├── tank.js         # Tank and bullet entities
 │   └── input.js        # Input handling
+├── DeepRL/
+│   └── backend/
+│       └── server.py   # Local backend DB for RL
 └── README.md           # This file
 ```
+
+## Local Dev Server
+
+The game uses a local server plus the DeepRL backend for persistence.
+
+### Windows (batch)
+
+```
+start-dev.bat
+```
+
+This starts:
+- Backend: `http://127.0.0.1:5050`
+- Game: `http://127.0.0.1:5173`
 
 ## Technical Details
 

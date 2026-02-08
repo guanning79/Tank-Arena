@@ -142,6 +142,7 @@ def list_tanks(data: list) -> None:
             f"[{index}] label={tank_label} "
             f"texture={tank.get('texture')} "
             f"speed={tank.get('speed')} "
+            f"cooldown={tank.get('cooldown', '?')} "
             f"hp={tank.get('tank_hit_point', '?')} "
             f"bound_min=({min_x},{min_y}) "
             f"bound_max=({max_x},{max_y}) "
@@ -163,6 +164,7 @@ def format_tank_line(index: int, tank: dict) -> str:
         f"[{index}] label={tank_label} "
         f"texture={tank.get('texture')} "
         f"speed={tank.get('speed')} "
+        f"cooldown={tank.get('cooldown', '?')} "
         f"hp={tank.get('tank_hit_point', '?')} "
         f"bound_min=({min_x},{min_y}) "
         f"bound_max=({max_x},{max_y}) "
@@ -185,6 +187,7 @@ class TankEditorGUI:
         self.tank_label_var = tk.StringVar()
         self.texture_var = tk.StringVar()
         self.speed_var = tk.StringVar()
+        self.cooldown_var = tk.StringVar(value="0")
         self.hit_point_var = tk.StringVar(value="1")
         self.bound_min_x_var = tk.StringVar()
         self.bound_min_y_var = tk.StringVar()
@@ -227,7 +230,7 @@ class TankEditorGUI:
         self.listbox.configure(yscrollcommand=scrollbar.set)
 
         form = ttk.Frame(split)
-        for idx in range(14):
+        for idx in range(15):
             form.rowconfigure(idx, weight=0)
         form.columnconfigure(1, weight=1)
 
@@ -244,24 +247,25 @@ class TankEditorGUI:
         self.add_texture_preview(form, row=1)
         self.add_form_row(form, 2, "Tank label", self.tank_label_var)
         self.add_form_row(form, 3, "Speed (px/frame)", self.speed_var)
-        self.add_form_row(form, 4, "Tank hit point", self.hit_point_var)
-        self.add_form_row(form, 5, "Bound min X", self.bound_min_x_var)
-        self.add_form_row(form, 6, "Bound min Y", self.bound_min_y_var)
-        self.add_form_row(form, 7, "Bound max X", self.bound_max_x_var)
-        self.add_form_row(form, 8, "Bound max Y", self.bound_max_y_var)
+        self.add_form_row(form, 4, "Cooldown", self.cooldown_var)
+        self.add_form_row(form, 5, "Tank hit point", self.hit_point_var)
+        self.add_form_row(form, 6, "Bound min X", self.bound_min_x_var)
+        self.add_form_row(form, 7, "Bound min Y", self.bound_min_y_var)
+        self.add_form_row(form, 8, "Bound max X", self.bound_max_x_var)
+        self.add_form_row(form, 9, "Bound max Y", self.bound_max_y_var)
 
-        ttk.Label(form, text="Shell size").grid(row=9, column=0, sticky="w", pady=4)
+        ttk.Label(form, text="Shell size").grid(row=10, column=0, sticky="w", pady=4)
         shell_size = ttk.Combobox(form, textvariable=self.shell_size_var, values=sorted(SHELL_SIZES), state="readonly")
-        shell_size.grid(row=9, column=1, sticky="ew", pady=4)
+        shell_size.grid(row=10, column=1, sticky="ew", pady=4)
 
-        self.add_form_row(form, 10, "Shell speed", self.shell_speed_var)
+        self.add_form_row(form, 11, "Shell speed", self.shell_speed_var)
 
-        ttk.Label(form, text="Shell color").grid(row=11, column=0, sticky="w", pady=4)
+        ttk.Label(form, text="Shell color").grid(row=12, column=0, sticky="w", pady=4)
         shell_color = ttk.Combobox(form, textvariable=self.shell_color_var, values=SHELL_COLORS, state="readonly")
-        shell_color.grid(row=11, column=1, sticky="ew", pady=4)
+        shell_color.grid(row=12, column=1, sticky="ew", pady=4)
 
         button_row = ttk.Frame(form)
-        button_row.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        button_row.grid(row=13, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         button_row.columnconfigure(0, weight=1)
         button_row.columnconfigure(1, weight=1)
         button_row.columnconfigure(2, weight=1)
@@ -275,7 +279,7 @@ class TankEditorGUI:
             text=f"TANK_DATA_ROOT: {TANK_DATA_ROOT.as_posix()}",
             foreground="#666",
         )
-        info.grid(row=13, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        info.grid(row=14, column=0, columnspan=2, sticky="w", pady=(12, 0))
 
     def add_form_row(
         self,
@@ -396,6 +400,7 @@ class TankEditorGUI:
         self.tank_label_var.set(tank.get("tank_label", ""))
         self.texture_var.set(tank.get("texture", ""))
         self.speed_var.set(str(tank.get("speed", "")))
+        self.cooldown_var.set(str(tank.get("cooldown", "")))
         self.hit_point_var.set(str(tank.get("tank_hit_point", "")))
         bound_min = tank.get("bound_min", {})
         bound_max = tank.get("bound_max", {})
@@ -418,6 +423,8 @@ class TankEditorGUI:
         tank_label = self.tank_label_var.get().strip()
         texture = normalize_texture_path(self.texture_var.get().strip())
         speed = self.parse_int(self.speed_var.get().strip(), "speed")
+        cooldown = self.parse_int(self.cooldown_var.get().strip(), "cooldown")
+        cooldown = validate_positive_int("cooldown", cooldown, minimum=0)
         hit_point = self.parse_int(self.hit_point_var.get().strip(), "tank hit point")
         hit_point = validate_positive_int("tank hit point", hit_point, minimum=1)
         bound_min_x = self.parse_int(self.bound_min_x_var.get().strip(), "bound min x")
@@ -431,6 +438,7 @@ class TankEditorGUI:
             "tank_label": tank_label,
             "texture": texture,
             "speed": speed,
+            "cooldown": cooldown,
             "tank_hit_point": hit_point,
             "bound_min": {"x": bound_min_x, "y": bound_min_y},
             "bound_max": {"x": bound_max_x, "y": bound_max_y},
@@ -493,6 +501,7 @@ def add_tank(args: argparse.Namespace) -> None:
     validate_unique_label(tank_label, data)
     texture = normalize_texture_path(args.texture)
     speed = validate_positive_int("speed", args.speed)
+    cooldown = validate_positive_int("cooldown", args.cooldown, minimum=0)
     hit_point = validate_positive_int("tank_hit_point", args.tank_hit_point, minimum=1)
     bound_min_x = validate_positive_int("bound_min_x", args.bound_min_x)
     bound_min_y = validate_positive_int("bound_min_y", args.bound_min_y)
@@ -506,6 +515,7 @@ def add_tank(args: argparse.Namespace) -> None:
         "tank_label": tank_label,
         "texture": texture,
         "speed": speed,
+        "cooldown": cooldown,
         "tank_hit_point": hit_point,
         "bound_min": {"x": bound_min_x, "y": bound_min_y},
         "bound_max": {"x": bound_max_x, "y": bound_max_y},
@@ -538,6 +548,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--tank-label", default="", help="Unique tank label (optional)")
     add_parser.add_argument("--texture", required=True, help="Path under TANK_DATA_ROOT")
     add_parser.add_argument("--speed", required=True, type=int, help="Pixels per frame")
+    add_parser.add_argument("--cooldown", default=0, type=int, help="Tank cooldown")
     add_parser.add_argument("--tank-hit-point", default=1, type=int, help="Tank hit points")
     add_parser.add_argument("--bound-min-x", required=True, type=int, help="Tank bound min X")
     add_parser.add_argument("--bound-min-y", required=True, type=int, help="Tank bound min Y")

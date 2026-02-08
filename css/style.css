@@ -73,6 +73,16 @@ body {
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
 }
 
+#ai-debug-panel {
+    min-width: 220px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 14px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
+}
+
 .debug-title {
     font-size: 16px;
     font-weight: bold;
@@ -97,6 +107,11 @@ body {
 }
 
 #debug-toggle {
+    padding: 6px 12px;
+    font-size: 14px;
+}
+
+#debug-ai-toggle {
     padding: 6px 12px;
     font-size: 14px;
 }

@@ -21,8 +21,11 @@ class Tank {
         this.shellSize = typeof options.shellSize === 'number' ? options.shellSize : 5;
         this.shellSpeed = typeof options.shellSpeed === 'number' ? options.shellSpeed : 500;
         this.shellColor = options.shellColor || '#FFD700';
+        this.cooldown = typeof options.cooldown === 'number' ? options.cooldown : 0;
         this.health = typeof options.health === 'number' ? options.health : 100;
         this.maxHealth = typeof options.maxHealth === 'number' ? options.maxHealth : this.health;
+        this.fxList = [];
+        this.fxPending = new Set();
     }
     
     setDirection(dx, dy) {
@@ -35,10 +38,12 @@ class Tank {
     }
 
     update(events, bounds = { width: 800, height: 600 }, canOccupyFn = null, mapData = null) {
-        if (!Array.isArray(events)) return;
+        if (!Array.isArray(events)) return false;
         const moveSpeed = this.speed;
         let nextX = this.x;
         let nextY = this.y;
+        const startX = this.x;
+        const startY = this.y;
 
         const canOccupy = (x, y) => {
             if (typeof canOccupyFn === 'function') {
@@ -108,6 +113,59 @@ class Tank {
         }
         
         // Face direction is only set by move events
+        return this.x !== startX || this.y !== startY;
+    }
+
+    addFx(name, fxManager, x = this.x, y = this.y) {
+        if (!fxManager || typeof fxManager.requestFx !== 'function') return;
+        const config = fxManager.config ? fxManager.config[name] : null;
+        if (config && config.unique) {
+            const hasActive = this.fxList.some((fx) => fx.name === name && fx.state !== 'ended');
+            if (hasActive) return;
+        }
+        if (!config) {
+            if (this.fxPending.has(name)) return;
+            this.fxPending.add(name);
+            fxManager.requestFx(name, x, y, this.fxList, () => {
+                this.fxPending.delete(name);
+            });
+            return;
+        }
+        fxManager.requestFx(name, x, y, this.fxList);
+    }
+
+    updateFx(fxManager) {
+        if (!fxManager || typeof fxManager.updateList !== 'function') return;
+        fxManager.updateList(this.fxList);
+    }
+
+    drawFx(fxManager) {
+        if (!fxManager || typeof fxManager.drawList !== 'function') return;
+        fxManager.drawList(this.fxList);
+    }
+
+    stopFx(name) {
+        if (!name) return;
+        for (let i = this.fxList.length - 1; i >= 0; i -= 1) {
+            const fx = this.fxList[i];
+            if (fx.name === name) {
+                if (typeof fx.stop === 'function') {
+                    fx.stop();
+                }
+                this.fxList.splice(i, 1);
+            }
+        }
+    }
+
+    stopAllFx() {
+        for (let i = this.fxList.length - 1; i >= 0; i -= 1) {
+            const fx = this.fxList[i];
+            if (typeof fx.stop === 'function') {
+                fx.stop();
+            }
+        }
+        this.fxList = [];
+        this.fxPending.clear();
     }
     
     draw(ctx) {
@@ -227,37 +285,100 @@ class Bullet {
         this.color = options.color || '#FFD700';
         this.owner = owner;
         this.active = true;
+        this.blockedByNonDestructible = false;
     }
     
     update(bounds = { width: 800, height: 600 }, mapData = null) {
         if (!this.active) return;
+        this.blockedByNonDestructible = false;
+        const startX = this.x;
+        const startY = this.y;
+        const endX = this.x + (this.dirX * this.speed);
+        const endY = this.y + (this.dirY * this.speed);
         
-        this.x += this.dirX * this.speed;
-        this.y += this.dirY * this.speed;
+        if (mapData && mapData.blocksBullet && mapData.isDestructible) {
+            const tileSize = mapData.tileSize;
+            const renderFxAtTileEdge = (row, col, posX, posY) => {
+                if (typeof window === 'undefined' || typeof window.RenderFx !== 'function') return;
+                const tileLeft = col * tileSize;
+                const tileRight = tileLeft + tileSize;
+                const tileTop = row * tileSize;
+                const tileBottom = tileTop + tileSize;
+                let fxX = posX;
+                let fxY = posY;
+                if (this.dirX > 0) fxX = tileLeft;
+                else if (this.dirX < 0) fxX = tileRight;
+                if (this.dirY > 0) fxY = tileTop;
+                else if (this.dirY < 0) fxY = tileBottom;
+                if (this.dirX !== 0 && this.dirY === 0) {
+                    if (fxY < tileTop) fxY = tileTop;
+                    if (fxY > tileBottom) fxY = tileBottom;
+                } else if (this.dirY !== 0 && this.dirX === 0) {
+                    if (fxX < tileLeft) fxX = tileLeft;
+                    if (fxX > tileRight) fxX = tileRight;
+                }
+                window.RenderFx('hit', fxX, fxY);
+            };
+
+            const checkAt = (posX, posY) => {
+                const r = this.radius;
+                const minCol = Math.floor((posX - r) / tileSize);
+                const maxCol = Math.floor((posX + r) / tileSize);
+                const minRow = Math.floor((posY - r) / tileSize);
+                const maxRow = Math.floor((posY + r) / tileSize);
+                for (let row = minRow; row <= maxRow; row += 1) {
+                    for (let col = minCol; col <= maxCol; col += 1) {
+                        if (mapData.isDestructible(row, col)) {
+                            renderFxAtTileEdge(row, col, posX, posY);
+                            if (mapData.tiles && mapData.tiles[row]) {
+                                const soilId = (typeof TILE_TYPES !== 'undefined' && TILE_TYPES.SOIL !== undefined)
+                                    ? TILE_TYPES.SOIL
+                                    : 0;
+                                mapData.tiles[row][col] = soilId;
+                            }
+                            return true;
+                        }
+                        if (mapData.blocksBullet(row, col)) {
+                            this.blockedByNonDestructible = true;
+                            renderFxAtTileEdge(row, col, posX, posY);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            const dx = endX - startX;
+            const dy = endY - startY;
+            const steps = Math.max(Math.abs(dx), Math.abs(dy));
+            if (steps === 0) {
+                if (checkAt(startX, startY)) {
+                    this.active = false;
+                    return;
+                }
+            } else {
+                let x = startX;
+                let y = startY;
+                const stepX = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+                const stepY = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+                for (let i = 0; i <= steps; i += 1) {
+                    if (checkAt(x, y)) {
+                        this.active = false;
+                        return;
+                    }
+                    x += stepX;
+                    y += stepY;
+                }
+            }
+        }
+
+        this.x = endX;
+        this.y = endY;
         
         // Deactivate if out of bounds
         if (this.x < 0 || this.x > bounds.width || this.y < 0 || this.y > bounds.height) {
             this.active = false;
             return;
-        }
-
-        if (mapData && mapData.blocksBullet) {
-            const r = this.radius;
-            const minCol = Math.floor((this.x - r) / mapData.tileSize);
-            const maxCol = Math.floor((this.x + r) / mapData.tileSize);
-            const minRow = Math.floor((this.y - r) / mapData.tileSize);
-            const maxRow = Math.floor((this.y + r) / mapData.tileSize);
-            for (let row = minRow; row <= maxRow; row += 1) {
-                for (let col = minCol; col <= maxCol; col += 1) {
-                    if (mapData.blocksBullet(row, col)) {
-                        if (typeof window !== 'undefined' && typeof window.RenderFx === 'function') {
-                            window.RenderFx('hit', this.x, this.y);
-                        }
-                        this.active = false;
-                        return;
-                    }
-                }
-            }
         }
     }
     

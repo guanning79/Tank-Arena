@@ -14,6 +14,7 @@
                 <div id="health">Health: 100</div>
                 <button id="scale-toggle" type="button">Scale: Off</button>
                 <button id="debug-toggle" type="button">Debug: Off</button>
+                <button id="debug-ai-toggle" type="button">DebugAI: Off</button>
             </div>
             <canvas id="gameCanvas"></canvas>
             <div id="start-screen">
@@ -25,6 +26,8 @@
             <div id="game-over-screen" class="hidden">
                 <h1>Game Over</h1>
                 <p id="final-score">Final Score: 0</p>
+                <p id="final-time">Time: 00:00</p>
+                <p id="final-destroyed">Destroyed: 0</p>
                 <button id="restart-button">Play Again</button>
             </div>
         </div>
@@ -33,10 +36,31 @@
             <div id="player-tile-pos">Tile: (0, 0)</div>
             <pre id="spawn-debug-log" class="debug-log"></pre>
         </div>
+        <div id="ai-debug-panel" class="hidden">
+            <div class="debug-title">AI Debug</div>
+            <div id="ai-debug-state">State: --</div>
+            <div id="ai-debug-action">Action: --</div>
+            <div id="ai-debug-reward">Reward: --</div>
+            <div id="ai-debug-epsilon">Epsilon: --</div>
+            <div id="ai-debug-loss">Loss: --</div>
+            <div id="ai-debug-steps">Steps: --</div>
+            <div id="ai-debug-episodes">Episodes: --</div>
+            <div id="ai-debug-build-state">Build state: --</div>
+            <div id="ai-debug-sent-observe">Sent observe: --</div>
+            <div id="ai-debug-worker-action">Worker action: --</div>
+            <div id="ai-debug-returned-action">Action returned: --</div>
+        </div>
     </div>
     <script src="js/global-define.js"></script>
     <script src="js/game-config.js"></script>
+    <script src="DeepRL/rl-config.js"></script>
+    <script src="DeepRL/rl-utils.js"></script>
+    <script src="DeepRL/rl-state.js"></script>
+    <script src="DeepRL/rl-reward.js"></script>
+    <script src="DeepRL/rl-agent.js"></script>
     <script src="js/map-loader.js"></script>
+    <script src="js/render-util.js"></script>
+    <script src="js/fx.js"></script>
     <script src="js/input.js"></script>
     <script src="js/tank.js"></script>
     <script src="js/game.js"></script>
