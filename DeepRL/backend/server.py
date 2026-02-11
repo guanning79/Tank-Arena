@@ -4,12 +4,14 @@ import os
 import sqlite3
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(ROOT_DIR, "rl-models.db")
 HOST = "127.0.0.1"
 PORT = int(os.getenv("PORT", "5050"))
+FREE_LIST = {}
+LAST_POPPED = {}
 
 
 def init_db():
@@ -28,6 +30,32 @@ def init_db():
             """
         )
         conn.commit()
+
+
+def map_key_from_record(model_key, metadata):
+    if metadata and isinstance(metadata, dict) and metadata.get("mapKey"):
+        return metadata.get("mapKey")
+    if model_key and "-" in model_key:
+        return model_key.split("-")[-1]
+    return "default"
+
+
+def rebuild_free_list():
+    global FREE_LIST
+    FREE_LIST = {}
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT model_key, metadata FROM rl_models"
+        ).fetchall()
+    for model_key, metadata_json in rows:
+        metadata = None
+        if metadata_json:
+            try:
+                metadata = json.loads(metadata_json)
+            except json.JSONDecodeError:
+                metadata = None
+        map_key = map_key_from_record(model_key, metadata)
+        FREE_LIST.setdefault(map_key, []).append(model_key)
 
 
 def parse_json(body):
@@ -69,6 +97,59 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             self._send_json(200, {"ok": True})
             return
+        if parsed.path.startswith("/api/rl-allocate/"):
+            map_key = unquote(parsed.path.split("/api/rl-allocate/")[1])
+            query = parse_qs(parsed.query or "")
+            base_key = query.get("baseKey", [None])[0] or "tank-ai-dqn"
+            free_list = FREE_LIST.get(map_key, [])
+            if free_list:
+                model_key = free_list.pop(0)
+                LAST_POPPED[map_key] = model_key
+                self._send_json(200, {"modelKey": model_key, "isNew": False})
+                return
+            suffix = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+            model_key = f"{base_key}-{map_key}-{suffix}"
+            copied_from = LAST_POPPED.get(map_key)
+            if copied_from:
+                with sqlite3.connect(DB_PATH) as conn:
+                    row = conn.execute(
+                        """
+                        SELECT model_json, weight_specs, weight_data_base64,
+                               training_config, metadata
+                        FROM rl_models WHERE model_key = ?
+                        """,
+                        (copied_from,),
+                    ).fetchone()
+                if row:
+                    model_json, weight_specs, weight_data, training_config, metadata = row
+                    now = datetime.utcnow().isoformat() + "Z"
+                    with sqlite3.connect(DB_PATH) as conn:
+                        conn.execute(
+                            """
+                            INSERT INTO rl_models (
+                                model_key, model_json, weight_specs, weight_data_base64,
+                                training_config, metadata, updated_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                model_key,
+                                model_json,
+                                weight_specs,
+                                weight_data,
+                                training_config,
+                                metadata,
+                                now,
+                            ),
+                        )
+                        conn.commit()
+                    self._send_json(
+                        200,
+                        {"modelKey": model_key, "isNew": True, "copiedFrom": copied_from},
+                    )
+                    return
+            self._send_json(200, {"modelKey": model_key, "isNew": True})
+            return
         if parsed.path.startswith("/api/rl-model/"):
             key = unquote(parsed.path.split("/api/rl-model/")[1])
             with sqlite3.connect(DB_PATH) as conn:
@@ -100,6 +181,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/rl-release/"):
+            map_key = unquote(parsed.path.split("/api/rl-release/")[1])
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            payload = parse_json(body) or {}
+            model_key = payload.get("modelKey")
+            if not model_key:
+                self._send_json(400, {"error": "Missing modelKey"})
+                return
+            FREE_LIST.setdefault(map_key, []).append(model_key)
+            self._send_json(200, {"ok": True})
+            return
         if parsed.path.startswith("/api/rl-model/"):
             key = unquote(parsed.path.split("/api/rl-model/")[1])
             length = int(self.headers.get("Content-Length", "0"))
@@ -150,6 +243,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     init_db()
+    rebuild_free_list()
     server = HTTPServer((HOST, PORT), Handler)
     print(f"DeepRL backend listening on http://{HOST}:{PORT}")
     server.serve_forever()

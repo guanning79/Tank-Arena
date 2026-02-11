@@ -8,6 +8,7 @@
             this.worker = null;
             this.actions = new Map();
             this.isInitialized = false;
+            this.allocatedModelKey = '';
             this.debugInfo = {
                 state: '--',
                 action: '--',
@@ -36,6 +37,8 @@
                     tfjsUrl: this.config.tfjsUrl,
                     modelStorageKey: this.config.modelStorageKey,
                     backendUrl: this.config.backendUrl,
+                    baseModelStorageKey: this.config.baseModelStorageKey,
+                    mapKey: this.config.mapKey,
                     hiddenLayers: this.config.hiddenLayers,
                     learningRate: this.config.learningRate,
                     gamma: this.config.gamma,
@@ -84,6 +87,26 @@
             this.actions.clear();
         }
 
+        releaseModelKey() {
+            if (this.config && this.config.backendUrl && this.config.mapKey && this.allocatedModelKey) {
+                const url = `${this.config.backendUrl}/api/rl-release/${encodeURIComponent(this.config.mapKey)}`;
+                const payload = JSON.stringify({ modelKey: this.allocatedModelKey });
+                if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+                    const blob = new Blob([payload], { type: 'application/json' });
+                    navigator.sendBeacon(url, blob);
+                } else if (typeof fetch !== 'undefined') {
+                    fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: payload,
+                        keepalive: true
+                    }).catch(() => {});
+                }
+            }
+            if (!this.isInitialized || !this.worker) return;
+            this.worker.postMessage({ type: 'release' });
+        }
+
         getDebugInfo() {
             return this.debugInfo;
         }
@@ -113,6 +136,10 @@
                     workerAction: true,
                     returnedAction: true
                 };
+                return;
+            }
+            if (msg.type === 'allocated') {
+                this.allocatedModelKey = msg.modelKey || '';
                 return;
             }
             if (msg.type === 'error') {

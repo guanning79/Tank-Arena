@@ -10,6 +10,9 @@ let episodes = 0;
 let epsilon = 1.0;
 let lastLoss = null;
 let backendUrl = '';
+let mapKey = '';
+let baseModelStorageKey = '';
+let allocatedModelKey = '';
 let replay = [];
 let replayIndex = 0;
 const prevState = new Map();
@@ -48,7 +51,10 @@ const saveToBackend = async () => {
             weightSpecs: artifacts.weightSpecs,
             weightDataBase64: arrayBufferToBase64(artifacts.weightData),
             trainingConfig: artifacts.trainingConfig || null,
-            userDefinedMetadata: artifacts.userDefinedMetadata || null
+            userDefinedMetadata: {
+                ...(artifacts.userDefinedMetadata || {}),
+                mapKey: mapKey || null
+            }
         };
         await fetch(`${backendUrl}/api/rl-model/${encodeURIComponent(config.modelStorageKey)}`, {
             method: 'POST',
@@ -80,6 +86,27 @@ const loadFromBackend = async () => {
     targetModel = buildModel(stateSize, actionSize, config.hiddenLayers, config.learningRate);
     targetModel.setWeights(model.getWeights());
     return true;
+};
+
+const allocateModelKey = async () => {
+    if (!backendUrl || !mapKey) return null;
+    const query = new URLSearchParams();
+    if (baseModelStorageKey) {
+        query.set('baseKey', baseModelStorageKey);
+    }
+    const response = await fetch(`${backendUrl}/api/rl-allocate/${encodeURIComponent(mapKey)}?${query.toString()}`);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload;
+};
+
+const releaseModelKey = async () => {
+    if (!backendUrl || !mapKey || !allocatedModelKey) return;
+    await fetch(`${backendUrl}/api/rl-release/${encodeURIComponent(mapKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelKey: allocatedModelKey })
+    });
 };
 
 const buildModel = (inputSize, outputSize, hiddenLayers, learningRate) => {
@@ -193,6 +220,8 @@ self.onmessage = async (event) => {
                 ? config.epsilon.start
                 : 1.0;
             backendUrl = config.backendUrl || '';
+            mapKey = config.mapKey || '';
+            baseModelStorageKey = config.baseModelStorageKey || '';
             await setupTf(config.tfjsUrl);
             model = buildModel(stateSize, actionSize, config.hiddenLayers, config.learningRate);
             targetModel = buildModel(stateSize, actionSize, config.hiddenLayers, config.learningRate);
@@ -203,7 +232,21 @@ self.onmessage = async (event) => {
             if (!tf || !config) return;
             if (backendUrl) {
                 try {
-                    await loadFromBackend();
+                    let allocated = null;
+                    try {
+                        allocated = await allocateModelKey();
+                    } catch (error) {
+                        allocated = null;
+                    }
+                    if (allocated && allocated.modelKey) {
+                        config.modelStorageKey = allocated.modelKey;
+                        allocatedModelKey = allocated.modelKey;
+                        self.postMessage({ type: 'allocated', modelKey: allocatedModelKey });
+                    }
+                    const loaded = await loadFromBackend();
+                    if (!loaded && allocated && allocated.isNew) {
+                        await saveToBackend();
+                    }
                 } catch (error) {
                     // Ignore if no prior model exists.
                 }
@@ -218,6 +261,16 @@ self.onmessage = async (event) => {
                 targetModel.setWeights(model.getWeights());
             } catch (error) {
                 // Ignore if no prior model exists.
+            }
+            return;
+        }
+        if (msg.type === 'release') {
+            if (backendUrl) {
+                try {
+                    await releaseModelKey();
+                } catch (error) {
+                    // ignore release errors
+                }
             }
             return;
         }

@@ -127,6 +127,8 @@ class Game {
             this.scaleToggle.textContent = 'Scale: On';
         }
         this.applyScale();
+        window.addEventListener('pagehide', () => this.releaseRlModelKey());
+        window.addEventListener('beforeunload', () => this.releaseRlModelKey());
     }
     
     async startGame() {
@@ -153,11 +155,20 @@ class Game {
         // Create player tank
         const spawnPosition = this.getSpawnPositionForTank('normal_pl', TILE_TYPES.PLAYER_SPAWN);
         this.player = this.createTankFromDefinition('normal_pl', spawnPosition.x, spawnPosition.y, '#4CAF50');
+        if (this.player) {
+            this.player.setDirection(0, -1);
+        }
         this.shootCooldownTicksMax = this.player && typeof this.player.cooldown === 'number'
             ? this.player.cooldown
             : 0;
         this.playerRespawnsRemaining = 1;
         this.initRl();
+        if (this.fx) {
+            const bounds = this.getMapBounds();
+            const fxX = bounds.width >> 1;
+            const fxY = bounds.height >> 1;
+            this.fx.playFx('game_start', fxX, fxY);
+        }
         
         // Hide/show screens
         document.getElementById('start-screen').classList.add('hidden');
@@ -180,9 +191,13 @@ class Game {
                 this.canvas.height = this.mapData.mapSize;
             }
             this.playerHQ = this.mapData ? this.mapData.getPlayerHQ() : null;
-            this.maxEnemyCount = this.mapData
+            const spawnCount = this.mapData
                 ? this.mapData.getSpawnPoints(TILE_TYPES.AI_SPAWN).length
                 : 0;
+            const rlMax = window.RL_CONFIG && typeof window.RL_CONFIG.maxEnemiesAlive === 'number'
+                ? window.RL_CONFIG.maxEnemiesAlive
+                : spawnCount;
+            this.maxEnemyCount = Math.min(spawnCount, rlMax);
             this.aiSpawnIndex = 0;
             await this.loadTileImages();
             this.applyScale();
@@ -230,10 +245,15 @@ class Game {
         const config = window.RL_CONFIG || {};
         this.rlEnabled = !!(config.enabled && window.DeepRL && window.DeepRL.DqnAgentController);
         if (!this.rlEnabled) return;
-        if (typeof config.baseModelStorageKey === 'string' && config.baseModelStorageKey) {
-            const mapKey = this.getRlModelKey(config.initialMap || config.mapKeyOverride);
-            if (mapKey) {
-                config.modelStorageKey = `${config.baseModelStorageKey}-${mapKey}`;
+        const mapKey = this.getRlModelKey(config.mapKeyOverride || config.initialMap);
+        if (mapKey) {
+            config.mapKey = mapKey;
+        }
+        if (config.persistenceMode !== 'backend') {
+            if (typeof config.baseModelStorageKey === 'string' && config.baseModelStorageKey) {
+                if (mapKey) {
+                    config.modelStorageKey = `${config.baseModelStorageKey}-${mapKey}`;
+                }
             }
         }
         if (!this.rlAgent) {
@@ -1047,6 +1067,9 @@ class Game {
                     if (window.RL_CONFIG && window.RL_CONFIG.rewardWeights) {
                         this.addRlEventReward(enemy, window.RL_CONFIG.rewardWeights.gotHit || 0);
                     }
+                    if (window.RL_CONFIG && window.RL_CONFIG.rewardWeights && bullet.owner && bullet.owner !== this.player) {
+                        this.addRlEventReward(bullet.owner, window.RL_CONFIG.rewardWeights.hitAlly || 0);
+                    }
                     this.logHit('enemy', enemy);
                     bullet.active = false;
                     
@@ -1202,6 +1225,7 @@ class Game {
                 fxY = bounds.height >> 1;
             }
             this.fx.playFx(this.gameOverFxName, fxX, fxY);
+            this.fx.playFx('game_over', fxX, fxY);
         } else {
             this.gameOver();
         }
@@ -1245,45 +1269,74 @@ class Game {
         if (!this.mapData) return;
         const config = window.RL_CONFIG || {};
         const maxAlive = typeof config.maxEnemiesAlive === 'number' ? config.maxEnemiesAlive : 1;
-        if (this.maxEnemyCount <= 0 || this.enemies.length >= this.maxEnemyCount) return;
-        if (this.enemies.length >= maxAlive) return;
+        if (this.maxEnemyCount <= 0 || this.enemies.length >= this.maxEnemyCount) {
+            if (this.showDebugBounds) {
+                this.appendSpawnDebugLine('ai respawn failed: max enemy count reached');
+            }
+            return;
+        }
+        if (this.enemies.length >= maxAlive) {
+            if (this.showDebugBounds) {
+                this.appendSpawnDebugLine('ai respawn failed: max alive cap reached');
+            }
+            return;
+        }
         const spawns = this.mapData.getSpawnPoints(TILE_TYPES.AI_SPAWN);
-        if (spawns.length === 0) return;
+        if (spawns.length === 0) {
+            if (this.showDebugBounds) {
+                this.appendSpawnDebugLine('ai respawn failed: no AI spawn points');
+            }
+            return;
+        }
+        if (this.showDebugBounds) {
+            const remainingSlots = Math.max(0, Math.min(this.maxEnemyCount, maxAlive) - this.enemies.length);
+            this.appendSpawnDebugLine(`ai respawn slots available: ${remainingSlots}`);
+        }
         const labelList = Array.isArray(window.RL_CONFIG && window.RL_CONFIG.aiTankLabels)
             ? window.RL_CONFIG.aiTankLabels
             : ['normal_en'];
         const tankLabel = labelList[this.getRandomInt(labelList.length)] || 'normal_en';
         const spawnIndex = this.getRandomInt(spawns.length);
-        const spawnPosition = this.getSpawnPositionForTank(tankLabel, TILE_TYPES.AI_SPAWN, spawns[spawnIndex]);
-        if (this.showDebugBounds) {
-            const def = this.tankDefinitions ? this.tankDefinitions[tankLabel] : null;
-            const defHp = def ? def.tank_hit_point : null;
-            this.appendSpawnDebugLine(
-                `ai def hp: value=${defHp} type=${typeof defHp} hasDefs=${!!this.tankDefinitions}`
-            );
+        let spawned = false;
+        for (let i = 0; i < spawns.length; i += 1) {
+            const index = (spawnIndex + i) % spawns.length;
+            const spawn = spawns[index];
+            const spawnPosition = this.getSpawnPositionForTank(tankLabel, TILE_TYPES.AI_SPAWN, spawn);
+            if (this.showDebugBounds) {
+                const def = this.tankDefinitions ? this.tankDefinitions[tankLabel] : null;
+                const defHp = def ? def.tank_hit_point : null;
+                this.appendSpawnDebugLine(
+                    `ai def hp: value=${defHp} type=${typeof defHp} hasDefs=${!!this.tankDefinitions}`
+                );
+            }
+            const enemy = this.createTankFromDefinition(tankLabel, spawnPosition.x, spawnPosition.y, '#F44336');
+            enemy.aiTankLabel = tankLabel;
+            enemy.aiShootCooldownMax = typeof enemy.cooldown === 'number' ? enemy.cooldown : 0;
+            enemy.aiShootCooldownTicks = 0;
+            if (this.showDebugBounds) {
+                const initInfo = {
+                    label: tankLabel,
+                    x: enemy.x,
+                    y: enemy.y,
+                    health: enemy.health,
+                    maxHealth: enemy.maxHealth,
+                    speed: enemy.speed,
+                    shellSize: enemy.shellSize,
+                    shellSpeed: enemy.shellSpeed,
+                    shellColor: enemy.shellColor
+                };
+                this.appendSpawnDebugLine(`ai spawn init: ${JSON.stringify(initInfo)}`);
+            }
+            if (this.canTankOccupy(spawnPosition.x, spawnPosition.y, enemy)) {
+                this.ensureRlEnemyData(enemy);
+                this.ensureRlInitialized(enemy);
+                this.enemies.push(enemy);
+                spawned = true;
+                break;
+            }
         }
-        const enemy = this.createTankFromDefinition(tankLabel, spawnPosition.x, spawnPosition.y, '#F44336');
-        enemy.aiTankLabel = tankLabel;
-        enemy.aiShootCooldownMax = typeof enemy.cooldown === 'number' ? enemy.cooldown : 0;
-        enemy.aiShootCooldownTicks = 0;
-        if (this.showDebugBounds) {
-            const initInfo = {
-                label: tankLabel,
-                x: enemy.x,
-                y: enemy.y,
-                health: enemy.health,
-                maxHealth: enemy.maxHealth,
-                speed: enemy.speed,
-                shellSize: enemy.shellSize,
-                shellSpeed: enemy.shellSpeed,
-                shellColor: enemy.shellColor
-            };
-            this.appendSpawnDebugLine(`ai spawn init: ${JSON.stringify(initInfo)}`);
-        }
-        if (this.canTankOccupy(spawnPosition.x, spawnPosition.y, enemy)) {
-            this.ensureRlEnemyData(enemy);
-            this.ensureRlInitialized(enemy);
-            this.enemies.push(enemy);
+        if (!spawned && this.showDebugBounds) {
+            this.appendSpawnDebugLine('ai respawn failed: no available spawn tile');
         }
     }
 
@@ -1514,6 +1567,7 @@ class Game {
     }
     
     gameOver() {
+        this.releaseRlModelKey();
         this.state = 'gameOver';
         const totalMs = this.gameTicks * this.fixedTimeStepMs;
         const totalSeconds = Math.floor(totalMs / 1000);
@@ -1524,6 +1578,12 @@ class Game {
         document.getElementById('final-time').textContent = `Time: ${timeLabel}`;
         document.getElementById('final-destroyed').textContent = `Destroyed: ${this.enemiesDestroyed}`;
         document.getElementById('game-over-screen').classList.remove('hidden');
+    }
+
+    releaseRlModelKey() {
+        if (this.rlAgent && typeof this.rlAgent.releaseModelKey === 'function') {
+            this.rlAgent.releaseModelKey();
+        }
     }
 }
 

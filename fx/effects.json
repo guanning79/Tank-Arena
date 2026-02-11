@@ -35,8 +35,15 @@
     "loop": false
   },
   "game_over": {
-    "frameCount": 1,
+    "frameCount": 60,
     "sound": "sounds/SFX game_over.mp3",
+    "soundStartFrame": 0,
+    "unique": false,
+    "loop": false
+  },
+  "game_start": {
+    "frameCount": 150,
+    "sound": "sounds/Track start.mp3",
     "soundStartFrame": 0,
     "unique": false,
     "loop": false
