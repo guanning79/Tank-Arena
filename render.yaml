@@ -18,7 +18,6 @@ services:
     plan: starter
     buildCommand: pip install -r DeepRL/backend/requirements.txt
     startCommand: python scripts/set_deploy_profile.py render && python DeepRL/backend/server.py
-    healthCheckPath: /healthz
     disk:
       name: rl-models-disk
       mountPath: /var/data
