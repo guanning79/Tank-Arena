@@ -11,25 +11,55 @@ class Game {
         this.titleBar = document.getElementById('title-bar');
         this.scaleToggle = document.getElementById('scale-toggle');
         this.debugToggle = document.getElementById('debug-toggle');
+        this.sessionIdLabel = document.getElementById('session-id-label');
+        this.copySessionIdButton = document.getElementById('copy-session-id-button');
         this.debugPanel = document.getElementById('debug-panel');
+        this.debugFps = document.getElementById('debug-fps');
         this.playerTilePos = document.getElementById('player-tile-pos');
         this.spawnDebugLog = document.getElementById('spawn-debug-log');
         this.aiDebugPanel = document.getElementById('ai-debug-panel');
+        this.gbeDebugPanel = document.getElementById('gbe-debug-panel');
+        this.gbeDebugLog = document.getElementById('gbe-debug-log');
+        this.gbeDebugMeta = document.getElementById('gbe-debug-meta');
+        this.gbePlayerIds = document.getElementById('gbe-player-ids');
+        this.gbeAiIds = document.getElementById('gbe-ai-ids');
         this.aiDebugState = document.getElementById('ai-debug-state');
         this.aiDebugAction = document.getElementById('ai-debug-action');
         this.aiDebugReward = document.getElementById('ai-debug-reward');
+        this.aiDebugRewardReasons = document.getElementById('ai-debug-reward-reasons');
         this.aiDebugEpsilon = document.getElementById('ai-debug-epsilon');
-        this.aiDebugLoss = document.getElementById('ai-debug-loss');
+        this.aiDebugTdLoss = document.getElementById('ai-debug-td-loss');
+        this.aiDebugQMean = document.getElementById('ai-debug-q-mean');
         this.aiDebugSteps = document.getElementById('ai-debug-steps');
         this.aiDebugEpisodes = document.getElementById('ai-debug-episodes');
+        this.aiDebugActionsStats = document.getElementById('ai-debug-actions-stats');
+        this.aiDebugModelPool = document.getElementById('ai-debug-model-pool');
         this.aiDebugBuildState = document.getElementById('ai-debug-build-state');
         this.aiDebugSentObserve = document.getElementById('ai-debug-sent-observe');
         this.aiDebugWorkerAction = document.getElementById('ai-debug-worker-action');
         this.aiDebugReturnedAction = document.getElementById('ai-debug-returned-action');
+        this.aiDebugInputCount = document.getElementById('ai-debug-input-count');
+        this.aiDebugError = document.getElementById('ai-debug-error');
+        this.aiDebugConnLog = document.getElementById('ai-debug-conn-log');
+        this.aiDebugTrainStats = document.getElementById('ai-debug-train-stats');
+        this.aiDebugPerformance = document.getElementById('ai-debug-performance');
+        this.aiDebugInference = document.getElementById('ai-debug-inference');
+        this.aiDebugModelInstances = document.getElementById('ai-debug-model-instances');
+        this.aiDebugMoveLog = document.getElementById('ai-debug-move-log');
+        this.aiEpisodeLogs = [];
         this.autoScale = true;
         this.showDebugBounds = false;
         this.showAIDebug = false;
+        this.showGBEDebug = false;
         this.spawnDebugLines = [];
+        this.gbeDebugLines = [];
+        this.gbeLastEventKey = null;
+        this.clientFps = 0;
+        this.clientFpsFrames = 0;
+        this.clientFpsLastMs = 0;
+        this.backendFps = 0;
+        this.backendFpsLastTick = null;
+        this.backendFpsLastMs = 0;
         this.initialPlayerSpawnRect = null;
         this.mapPixelSize = 0;
         this.tileImages = {};
@@ -41,12 +71,27 @@ class Game {
         this.playerHQ = null;
         this.gameOverStarted = false;
         this.gameOverFxName = 'destroy_hq';
-
-        // Deep RL
-        this.rlAgent = null;
-        this.rlEnabled = false;
-        this.rlEnemyData = new Map();
-        this.rlEnemyIdCounter = 0;
+        this.networkClient = null;
+        this.networkMode = false;
+        this.networkState = null;
+        this.networkPlayerId = null;
+        this.currentSessionId = null;
+        this.netStats = {
+            totalRecv: 0,
+            totalSent: 0,
+            tickRecv: 0,
+            tickSent: 0,
+            breakdown: null
+        };
+        this.lastNetLogTick = 0;
+        this.networkTanks = new Map();
+        this.networkPrevPositions = new Map();
+        this.backendAIDebug = null;
+        this.backendGBEDebug = null;
+        this.aiDebugLabels = null;
+        this.gbeDebugLabels = null;
+        this.networkPlayerStateLabels = null;
+        this.networkBulletStateLabels = null;
         
         // Set canvas size
         this.canvas.width = 800;
@@ -81,6 +126,12 @@ class Game {
         this.enemiesDestroyed = 0;
         this.gameOverStarted = false;
         this.playerRespawnsRemaining = 0;
+        this.autoRestartEnabled = false;
+        this.autoRestartSeconds = 5;
+        this.autoRestartRemaining = 0;
+        this.autoRestartTimer = null;
+        this.autoRestartToggle = null;
+        this.autoRestartCountdown = null;
         
         this.setupUI();
         this.init();
@@ -89,10 +140,36 @@ class Game {
     setupUI() {
         const startButton = document.getElementById('start-button');
         const restartButton = document.getElementById('restart-button');
+        const autoRestartToggle = document.getElementById('auto-restart-toggle');
+        const autoRestartCountdown = document.getElementById('auto-restart-countdown');
+        const joinButton = document.getElementById('join-button');
+        const sessionInput = document.getElementById('session-id-input');
         const debugAiToggle = document.getElementById('debug-ai-toggle');
+        const debugGbeToggle = document.getElementById('debug-gbe-toggle');
+
+        this.autoRestartToggle = autoRestartToggle;
+        this.autoRestartCountdown = autoRestartCountdown;
         
-        startButton.addEventListener('click', () => this.startGame());
-        restartButton.addEventListener('click', () => this.startGame());
+        startButton.addEventListener('click', () => this.startOnlineGame('create'));
+        restartButton.addEventListener('click', () => this.restartGameFlow());
+        if (joinButton) {
+            joinButton.addEventListener('click', () => {
+                const sessionId = sessionInput ? sessionInput.value.trim() : '';
+                if (sessionId) {
+                    this.startOnlineGame('join', sessionId);
+                }
+            });
+        }
+        if (autoRestartToggle) {
+            autoRestartToggle.addEventListener('click', () => {
+                this.setAutoRestartEnabled(!this.autoRestartEnabled);
+                if (this.state === 'gameOver') {
+                    this.startAutoRestartTimer();
+                } else {
+                    this.updateAutoRestartCountdown();
+                }
+            });
+        }
 
         if (this.scaleToggle) {
             this.scaleToggle.addEventListener('click', () => this.toggleScale());
@@ -102,6 +179,31 @@ class Game {
         }
         if (debugAiToggle) {
             debugAiToggle.addEventListener('click', () => this.toggleAIDebug());
+        }
+        if (debugGbeToggle) {
+            debugGbeToggle.addEventListener('click', () => this.toggleGBEDebug());
+        }
+        if (this.copySessionIdButton) {
+            this.copySessionIdButton.addEventListener('click', async () => {
+                const sessionId = this.currentSessionId || (this.networkClient ? this.networkClient.sessionId : null);
+                if (!sessionId) return;
+                try {
+                    await navigator.clipboard.writeText(sessionId);
+                    this.copySessionIdButton.textContent = 'Copied';
+                    setTimeout(() => {
+                        if (this.copySessionIdButton) {
+                            this.copySessionIdButton.textContent = 'Copy';
+                        }
+                    }, 1200);
+                } catch {
+                    this.copySessionIdButton.textContent = 'Failed';
+                    setTimeout(() => {
+                        if (this.copySessionIdButton) {
+                            this.copySessionIdButton.textContent = 'Copy';
+                        }
+                    }, 1200);
+                }
+            });
         }
     }
     
@@ -123,15 +225,21 @@ class Game {
         if (this.aiDebugPanel) {
             this.aiDebugPanel.classList.add('hidden');
         }
+        if (this.gbeDebugPanel) {
+            this.gbeDebugPanel.classList.add('hidden');
+        }
         if (this.scaleToggle) {
             this.scaleToggle.textContent = 'Scale: On';
         }
+        const debugGbeToggle = document.getElementById('debug-gbe-toggle');
+        if (debugGbeToggle) {
+            debugGbeToggle.textContent = 'DebugGBE: Off';
+        }
         this.applyScale();
-        window.addEventListener('pagehide', () => this.releaseRlModelKey());
-        window.addEventListener('beforeunload', () => this.releaseRlModelKey());
     }
     
     async startGame() {
+        this.clearAutoRestartTimer();
         this.state = 'playing';
         this.score = 0;
         this.bullets = [];
@@ -143,8 +251,7 @@ class Game {
         this.gameTicks = 0;
         this.enemiesDestroyed = 0;
         this.gameOverStarted = false;
-        this.rlEnemyData.clear();
-        this.rlEnemyIdCounter = 0;
+        this.currentSessionId = null;
         
         await this.loadInitialMap();
         await this.loadTankDefinitions();
@@ -162,7 +269,6 @@ class Game {
             ? this.player.cooldown
             : 0;
         this.playerRespawnsRemaining = 1;
-        this.initRl();
         if (this.fx) {
             const bounds = this.getMapBounds();
             const fxX = bounds.width >> 1;
@@ -176,6 +282,151 @@ class Game {
         
         this.updateUI();
         this.gameLoop(performance.now());
+    }
+
+    async startOnlineGame(mode, sessionId = '') {
+        this.clearAutoRestartTimer();
+        this.state = 'playing';
+        this.score = 0;
+        this.bullets = [];
+        this.enemies = [];
+        this.shootCooldownTicks = 0;
+        this.enemySpawnTimerTicks = 0;
+        this.playerContactDamageAccumulator = 0;
+        this.playerPrevMoved = false;
+        this.gameTicks = 0;
+        this.enemiesDestroyed = 0;
+        this.gameOverStarted = false;
+        this.networkMode = true;
+        this.networkState = null;
+        this.networkPlayerId = null;
+        this.currentSessionId = null;
+        this.aiDebugLabels = null;
+        this.gbeDebugLabels = null;
+        this.networkPlayerStateLabels = null;
+        this.networkBulletStateLabels = null;
+        this.backendGBEDebug = null;
+        this.netStats = {
+            totalRecv: 0,
+            totalSent: 0,
+            tickRecv: 0,
+            tickSent: 0,
+            breakdown: null
+        };
+        this.lastNetLogTick = 0;
+
+        const config = window.GAME_CONFIG || {};
+        const backendUrl = config.backendUrl || 'http://127.0.0.1:5051';
+        const wsUrl = config.backendWsUrl || 'ws://127.0.0.1:5051/ws';
+        this.networkClient = new NetworkClient({
+            backendUrl,
+            wsUrl,
+            onState: (state, isDelta) => this.applyNetworkState(state, isDelta),
+            onNetStats: (stats) => { this.netStats = stats; }
+        });
+
+        await this.loadTankDefinitions();
+        if (this.fx) {
+            await this.fx.preloadFx('move');
+        }
+
+        try {
+            let payload;
+            if (mode === 'join') {
+                payload = await this.networkClient.joinSession(sessionId);
+            } else {
+                const gameConfig = window.GAME_CONFIG || {};
+                const rlConfig = window.RL_CONFIG || {};
+                const maxEnemiesAlive = (typeof rlConfig.maxEnemiesAlive === 'number')
+                    ? rlConfig.maxEnemiesAlive
+                    : gameConfig.maxEnemiesAlive;
+                payload = await this.networkClient.createSession(
+                    config.initialMap || 'Stage03.json',
+                    { maxEnemiesAlive }
+                );
+            }
+            await this.networkClient.connect('player');
+            this.networkClient.setDebugAI(this.showAIDebug);
+            this.networkClient.setDebugGBE(this.showGBEDebug);
+            this.networkPlayerId = payload.playerId;
+            this.currentSessionId = payload.sessionId || this.networkClient.sessionId || null;
+            if (payload.map) {
+                this.mapData = new MapData(payload.map);
+                this.mapPixelSize = this.mapData.mapSize;
+                this.canvas.width = this.mapData.mapSize;
+                this.canvas.height = this.mapData.mapSize;
+                this.playerHQ = this.mapData.getPlayerHQ();
+                await this.loadTileImages();
+                this.applyScale();
+            }
+            if (payload.state) {
+                this.applyNetworkState(payload.state, false);
+            }
+        } catch (error) {
+            window.alert(error.message || 'Failed to start online game.');
+            this.state = 'menu';
+            return;
+        }
+
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('game-over-screen').classList.add('hidden');
+        this.updateUI();
+        this.gameLoop(performance.now());
+    }
+
+    restartGameFlow() {
+        if (this.networkMode) {
+            this.startOnlineGame('create');
+        } else {
+            this.startGame();
+        }
+    }
+
+    setAutoRestartEnabled(enabled) {
+        this.autoRestartEnabled = Boolean(enabled);
+        this.updateAutoRestartToggleUI();
+    }
+
+    updateAutoRestartToggleUI() {
+        if (this.autoRestartToggle) {
+            this.autoRestartToggle.textContent = this.autoRestartEnabled
+                ? 'Auto Play Again: On'
+                : 'Auto Play Again: Off';
+        }
+    }
+
+    updateAutoRestartCountdown() {
+        if (!this.autoRestartCountdown) return;
+        if (!this.autoRestartEnabled || this.autoRestartRemaining <= 0) {
+            this.autoRestartCountdown.textContent = 'Next game in: --';
+            return;
+        }
+        this.autoRestartCountdown.textContent = `Next game in: ${this.autoRestartRemaining}s`;
+    }
+
+    clearAutoRestartTimer() {
+        if (this.autoRestartTimer) {
+            clearInterval(this.autoRestartTimer);
+            this.autoRestartTimer = null;
+        }
+        this.autoRestartRemaining = 0;
+        this.updateAutoRestartCountdown();
+    }
+
+    startAutoRestartTimer() {
+        this.clearAutoRestartTimer();
+        if (!this.autoRestartEnabled) return;
+        this.autoRestartRemaining = this.autoRestartSeconds;
+        this.updateAutoRestartCountdown();
+        this.autoRestartTimer = setInterval(() => {
+            this.autoRestartRemaining -= 1;
+            if (this.autoRestartRemaining <= 0) {
+                this.clearAutoRestartTimer();
+                this.restartGameFlow();
+                return;
+            }
+            this.updateAutoRestartCountdown();
+        }, 1000);
     }
 
     async loadInitialMap() {
@@ -194,10 +445,10 @@ class Game {
             const spawnCount = this.mapData
                 ? this.mapData.getSpawnPoints(TILE_TYPES.AI_SPAWN).length
                 : 0;
-            const rlMax = window.RL_CONFIG && typeof window.RL_CONFIG.maxEnemiesAlive === 'number'
-                ? window.RL_CONFIG.maxEnemiesAlive
+            const cfgMax = window.GAME_CONFIG && typeof window.GAME_CONFIG.maxEnemiesAlive === 'number'
+                ? window.GAME_CONFIG.maxEnemiesAlive
                 : spawnCount;
-            this.maxEnemyCount = Math.min(spawnCount, rlMax);
+            this.maxEnemyCount = Math.min(spawnCount, cfgMax);
             this.aiSpawnIndex = 0;
             await this.loadTileImages();
             this.applyScale();
@@ -239,36 +490,6 @@ class Game {
                 textureImage: processed || img
             };
         });
-    }
-
-    initRl() {
-        const config = window.RL_CONFIG || {};
-        this.rlEnabled = !!(config.enabled && window.DeepRL && window.DeepRL.DqnAgentController);
-        if (!this.rlEnabled) return;
-        const mapKey = this.getRlModelKey(config.mapKeyOverride || config.initialMap);
-        if (mapKey) {
-            config.mapKey = mapKey;
-        }
-        if (config.persistenceMode !== 'backend') {
-            if (typeof config.baseModelStorageKey === 'string' && config.baseModelStorageKey) {
-                if (mapKey) {
-                    config.modelStorageKey = `${config.baseModelStorageKey}-${mapKey}`;
-                }
-            }
-        }
-        if (!this.rlAgent) {
-            this.rlAgent = new window.DeepRL.DqnAgentController(config);
-        }
-        if (typeof this.rlAgent.resetEpisode === 'function') {
-            this.rlAgent.resetEpisode();
-        }
-    }
-
-    getRlModelKey(mapPath) {
-        if (!mapPath) return null;
-        const normalized = this.normalizeMapPath(mapPath);
-        const clean = normalized.replace(/^maps\//i, '').replace(/\.json$/i, '');
-        return clean.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
     }
 
     createTankFromDefinition(label, x, y, fallbackColor) {
@@ -342,185 +563,6 @@ class Game {
         return normalized;
     }
 
-    ensureRlInitialized(enemy) {
-        if (!this.rlEnabled || !this.rlAgent) return;
-        if (this.rlAgent.isInitialized) return;
-        if (!window.DeepRL || typeof window.DeepRL.buildState !== 'function') return;
-        const bounds = this.getMapBounds();
-        const data = this.ensureRlEnemyData(enemy);
-        const state = window.DeepRL.buildState({
-            enemy,
-            player: this.player,
-            mapData: this.mapData,
-            hqTile: this.playerHQ,
-            bounds,
-            idleTicks: data.idleTicks,
-            aiTypeIndex: data.aiTypeIndex,
-            config: window.RL_CONFIG
-        });
-        const actionCount = Array.isArray(window.RL_CONFIG.actionMap)
-            ? window.RL_CONFIG.actionMap.length
-            : 1;
-        this.rlAgent.init(state.length, actionCount);
-    }
-
-    ensureRlEnemyData(enemy) {
-        if (!enemy || !this.rlEnabled) return null;
-        if (!enemy.aiId) {
-            this.rlEnemyIdCounter += 1;
-            enemy.aiId = `ai_${this.rlEnemyIdCounter}`;
-        }
-        let data = this.rlEnemyData.get(enemy.aiId);
-        if (data) return data;
-        const bounds = this.getMapBounds();
-        const mapSize = bounds.width || 1;
-        const dx = this.player ? this.player.x - enemy.x : 0;
-        const dy = this.player ? this.player.y - enemy.y : 0;
-        const playerDist = Math.sqrt(dx * dx + dy * dy);
-        let hqDist = 0;
-        if (this.mapData && this.playerHQ) {
-            const hqPos = this.mapData.tileToPixel(this.playerHQ.col, this.playerHQ.row);
-            const hqX = hqPos.x + this.mapData.tileSize / 2;
-            const hqY = hqPos.y + this.mapData.tileSize / 2;
-            const hqDx = hqX - enemy.x;
-            const hqDy = hqY - enemy.y;
-            hqDist = Math.sqrt(hqDx * hqDx + hqDy * hqDy);
-        }
-        const labelList = Array.isArray(window.RL_CONFIG.aiTankLabels)
-            ? window.RL_CONFIG.aiTankLabels
-            : [];
-        const aiTypeIndex = labelList.length ? Math.max(0, labelList.indexOf(enemy.aiTankLabel)) : 0;
-        data = {
-            id: enemy.aiId,
-            prevDistPlayer: playerDist || mapSize,
-            prevDistHQ: hqDist || mapSize,
-            pendingReward: 0,
-            pendingDone: false,
-            eventReward: 0,
-            idleTicks: 0,
-            prevDirX: enemy.dirX || 0,
-            prevDirY: enemy.dirY || 0,
-            ticksSinceDirChange: 0,
-            aiTypeIndex
-        };
-        this.rlEnemyData.set(enemy.aiId, data);
-        return data;
-    }
-
-    updateEnemyWithRl(enemy, bounds) {
-        if (!this.rlEnabled || !this.rlAgent || !window.DeepRL) return false;
-        const data = this.ensureRlEnemyData(enemy);
-        if (!data) return false;
-        if (typeof this.rlAgent.setDebugStep === 'function') {
-            this.rlAgent.setDebugStep({
-                buildState: false,
-                sentObserve: false,
-                workerAction: false,
-                returnedAction: false
-            });
-        }
-        this.ensureRlInitialized(enemy);
-        const state = window.DeepRL.buildState({
-            enemy,
-            player: this.player,
-            mapData: this.mapData,
-            hqTile: this.playerHQ,
-            bounds,
-            idleTicks: data.idleTicks,
-            aiTypeIndex: data.aiTypeIndex,
-            config: window.RL_CONFIG
-        });
-        if (typeof this.rlAgent.setDebugStep === 'function') {
-            this.rlAgent.setDebugStep({ buildState: true });
-        }
-        const reward = data.pendingReward || 0;
-        const done = data.pendingDone || false;
-        data.pendingReward = 0;
-        data.pendingDone = false;
-        data.eventReward = 0;
-        this.rlAgent.observe({ id: data.id, state, reward, done });
-        if (typeof this.rlAgent.setDebugStep === 'function') {
-            this.rlAgent.setDebugStep({ sentObserve: true });
-        }
-        const config = window.RL_CONFIG || {};
-        const nowMs = Date.now();
-        const actionInfo = this.rlAgent.getActionInfo ? this.rlAgent.getActionInfo(data.id) : null;
-        const responseTimeoutMs = typeof config.actionResponseTimeoutMs === 'number'
-            ? config.actionResponseTimeoutMs
-            : 0;
-        let actionIndex = actionInfo ? actionInfo.action : 0;
-        if (typeof this.rlAgent.setDebugStep === 'function') {
-            this.rlAgent.setDebugStep({
-                workerAction: !!actionInfo,
-                returnedAction: !!actionInfo
-            });
-        }
-        if (!actionInfo || (responseTimeoutMs && nowMs - actionInfo.time > responseTimeoutMs)) {
-            actionIndex = window.DeepRL.pickRandomActionIndex(config, { mode: 'any' });
-        }
-        if (typeof config.stuckActionThreshold === 'number' && data.idleTicks >= config.stuckActionThreshold) {
-            const mode = config.stuckActionMode === 'move' ? 'move' : 'any';
-            actionIndex = window.DeepRL.pickRandomActionIndex(config, { mode });
-        }
-        const action = window.DeepRL.mapActionToControlEvents(actionIndex, window.RL_CONFIG);
-        if (!enemy.aiShootCooldownMax) {
-            enemy.aiShootCooldownMax = typeof enemy.cooldown === 'number' ? enemy.cooldown : 0;
-        }
-        if (typeof enemy.aiShootCooldownTicks !== 'number') {
-            enemy.aiShootCooldownTicks = 0;
-        }
-        if (enemy.aiShootCooldownTicks > 0) {
-            enemy.aiShootCooldownTicks -= 1;
-        }
-        const didMove = enemy.update(
-            action.events,
-            bounds,
-            (x, y) => this.canTankOccupy(x, y, enemy),
-            this.mapData
-        );
-        if (action.fire && enemy.aiShootCooldownTicks <= 0) {
-            this.enemyShoot(enemy);
-            enemy.aiShootCooldownTicks = enemy.aiShootCooldownMax;
-        }
-        data.idleTicks = didMove ? 0 : data.idleTicks + 1;
-        const halfEnemyW = enemy.width >> 1;
-        const halfEnemyH = enemy.height >> 1;
-        enemy.x = Math.max(halfEnemyW, Math.min(enemy.x, bounds.width - halfEnemyW));
-        enemy.y = Math.max(halfEnemyH, Math.min(enemy.y, bounds.height - halfEnemyH));
-        return true;
-    }
-
-    addRlEventReward(enemy, reward) {
-        if (!this.rlEnabled || !enemy) return;
-        const data = this.ensureRlEnemyData(enemy);
-        if (!data) return;
-        data.eventReward += reward;
-    }
-
-    finalizeRlEpisode(extraRewardAll = 0) {
-        if (!this.rlEnabled || !this.rlAgent || !window.DeepRL) return;
-        const bounds = this.getMapBounds();
-        this.enemies.forEach((enemy) => {
-            const data = this.ensureRlEnemyData(enemy);
-            if (!data) return;
-            const state = window.DeepRL.buildState({
-                enemy,
-                player: this.player,
-                mapData: this.mapData,
-                hqTile: this.playerHQ,
-                bounds,
-                idleTicks: data.idleTicks,
-                aiTypeIndex: data.aiTypeIndex,
-                config: window.RL_CONFIG
-            });
-            const reward = (data.pendingReward || 0) + (data.eventReward || 0) + extraRewardAll;
-            data.pendingReward = 0;
-            data.eventReward = 0;
-            data.pendingDone = false;
-            this.rlAgent.observe({ id: data.id, state, reward, done: true });
-        });
-    }
-    
     getSpawnPositionForTank(label, spawnType, spawnOverride = null) {
         const isPlayerSpawn = label === 'normal_pl';
         if (isPlayerSpawn) {
@@ -809,6 +851,9 @@ class Game {
         if (!this.showDebugBounds) {
             this.clearSpawnDebugLog();
             this.initialPlayerSpawnRect = null;
+            if (this.debugFps) {
+                this.debugFps.textContent = 'Client FPS: --';
+            }
         }
     }
 
@@ -820,6 +865,35 @@ class Game {
         }
         if (this.aiDebugPanel) {
             this.aiDebugPanel.classList.toggle('hidden', !this.showAIDebug);
+        }
+        if (this.networkMode && this.networkClient) {
+            this.networkClient.setDebugAI(this.showAIDebug);
+        }
+    }
+
+    toggleGBEDebug() {
+        this.showGBEDebug = !this.showGBEDebug;
+        const debugGbeToggle = document.getElementById('debug-gbe-toggle');
+        if (debugGbeToggle) {
+            debugGbeToggle.textContent = this.showGBEDebug ? 'DebugGBE: On' : 'DebugGBE: Off';
+        }
+        if (this.gbeDebugPanel) {
+            this.gbeDebugPanel.classList.toggle('hidden', !this.showGBEDebug);
+        }
+        if (this.networkMode && this.networkClient) {
+            this.networkClient.setDebugGBE(this.showGBEDebug);
+        }
+        if (!this.showGBEDebug) {
+            this.gbeDebugLines = [];
+            this.gbeLastEventKey = null;
+            if (this.gbeDebugLog) {
+                this.gbeDebugLog.textContent = '';
+            }
+            if (this.gbeDebugMeta) {
+                this.gbeDebugMeta.textContent = 'GBE src: -- | Sessions: -- | AI inputs recv/applied: --/-- | sockets ai/client: --/-- | errCount: -- | Backend FPS: --';
+            }
+            if (this.gbePlayerIds) this.gbePlayerIds.textContent = '--';
+            if (this.gbeAiIds) this.gbeAiIds.textContent = '--';
         }
     }
 
@@ -835,20 +909,175 @@ class Game {
     }
 
     updateAIDebugPanel() {
-        if (!this.showAIDebug || !this.aiDebugPanel || !this.rlAgent) return;
-        const info = this.rlAgent.getDebugInfo ? this.rlAgent.getDebugInfo() : null;
-        if (!info) return;
-        if (this.aiDebugState) this.aiDebugState.textContent = `State: ${info.state}`;
-        if (this.aiDebugAction) this.aiDebugAction.textContent = `Action: ${info.action}`;
-        if (this.aiDebugReward) this.aiDebugReward.textContent = `Reward: ${info.reward}`;
-        if (this.aiDebugEpsilon) this.aiDebugEpsilon.textContent = `Epsilon: ${info.epsilon}`;
-        if (this.aiDebugLoss) this.aiDebugLoss.textContent = `Loss: ${info.loss}`;
-        if (this.aiDebugSteps) this.aiDebugSteps.textContent = `Steps: ${info.steps}`;
-        if (this.aiDebugEpisodes) this.aiDebugEpisodes.textContent = `Episodes: ${info.episodes}`;
-        if (this.aiDebugBuildState) this.aiDebugBuildState.textContent = `Build state: ${info.buildState ? 'true' : 'false'}`;
-        if (this.aiDebugSentObserve) this.aiDebugSentObserve.textContent = `Sent observe: ${info.sentObserve ? 'true' : 'false'}`;
-        if (this.aiDebugWorkerAction) this.aiDebugWorkerAction.textContent = `Worker action: ${info.workerAction ? 'true' : 'false'}`;
-        if (this.aiDebugReturnedAction) this.aiDebugReturnedAction.textContent = `Action returned: ${info.returnedAction ? 'true' : 'false'}`;
+        if (!this.showAIDebug || !this.aiDebugPanel) return;
+        if (this.networkMode) {
+            const info = this.backendAIDebug || {};
+            const gbe = this.backendGBEDebug || {};
+            const recvTotal = typeof gbe.recvTotal === 'number' ? gbe.recvTotal : 0;
+            const appliedTotal = typeof gbe.appliedTotal === 'number' ? gbe.appliedTotal : 0;
+            const last = gbe.lastApplied || gbe.lastReceived || null;
+            if (this.aiDebugState) {
+                const source = gbe.stateSource ? ` [${gbe.stateSource}]` : '';
+                const stateText = info.state || 'backend-authoritative';
+                this.aiDebugState.textContent = `State: ${stateText}${source}`;
+            }
+            const actionValue = info.action || (last ? (last.move || 'none') : '--');
+            if (this.aiDebugAction) this.aiDebugAction.textContent = `Action: ${actionValue}`;
+            if (this.aiDebugReward) this.aiDebugReward.textContent = `Reward: ${info.reward ?? '--'}`;
+            if (this.aiDebugRewardReasons) {
+                let reasons = '--';
+                let branch = 'unset';
+                if (Array.isArray(info.rewardReasons)) {
+                    branch = info.rewardReasons.length ? 'array' : 'array-empty';
+                    reasons = info.rewardReasons.length ? info.rewardReasons.join(', ') : 'none';
+                } else if (info.rewardReasons) {
+                    branch = 'value';
+                    reasons = info.rewardReasons;
+                } else {
+                    branch = 'missing';
+                }
+                this.aiDebugRewardReasons.textContent = `Reward reasons: ${reasons} (src=${branch})`;
+            }
+            if (this.aiDebugEpsilon) this.aiDebugEpsilon.textContent = `Epsilon: ${info.epsilon ?? '--'}`;
+            if (this.aiDebugTdLoss) {
+                const tdLoss = typeof info.tdLoss === 'number' ? info.tdLoss.toFixed(4) : '--';
+                this.aiDebugTdLoss.textContent = `TD Loss: ${tdLoss}`;
+            }
+            if (this.aiDebugQMean) {
+                const qMean = typeof info.qMean === 'number' ? info.qMean.toFixed(4) : '--';
+                this.aiDebugQMean.textContent = `Q mean: ${qMean}`;
+            }
+            if (this.aiDebugSteps) this.aiDebugSteps.textContent = `Steps: ${info.steps ?? this.gameTicks}`;
+            if (this.aiDebugEpisodes) this.aiDebugEpisodes.textContent = `Episodes: ${info.episodes ?? '--'}`;
+            if (this.aiDebugActionsStats) {
+                const transitions = typeof info.transitionsReceived === 'number' ? info.transitionsReceived : '--';
+                const actions = typeof info.actionsGenerated === 'number' ? info.actionsGenerated : '--';
+                const gbeEvents = typeof info.gbeInputEvents === 'number' ? info.gbeInputEvents : '--';
+                const actionTick = (typeof info.actionTick === 'number' || typeof info.actionTick === 'string')
+                    ? info.actionTick
+                    : '--';
+                this.aiDebugActionsStats.textContent = `Transitions/actions/GBE events: ${transitions}/${actions}/${gbeEvents} | actionTick: ${actionTick}`;
+            }
+            if (this.aiDebugModelPool) {
+                const available = typeof info.modelPoolAvailable === 'number' ? info.modelPoolAvailable : '--';
+                const total = typeof info.modelPoolTotal === 'number' ? info.modelPoolTotal : '--';
+                const inUse = typeof info.modelPoolInUse === 'number' ? info.modelPoolInUse : '--';
+                this.aiDebugModelPool.textContent = `Model pool available/total/in-use: ${available}/${total}/${inUse}`;
+            }
+            if (this.aiDebugBuildState) this.aiDebugBuildState.textContent = `Build state: ${info.buildState ? 'true' : 'false'}`;
+            if (this.aiDebugSentObserve) this.aiDebugSentObserve.textContent = `Sent observe: ${info.sentObserve ? 'true' : 'false'}`;
+            if (this.aiDebugWorkerAction) this.aiDebugWorkerAction.textContent = `Worker action: ${info.workerAction ? 'true' : 'false'}`;
+            if (this.aiDebugReturnedAction) this.aiDebugReturnedAction.textContent = `Action returned: ${info.returnedAction ? 'true' : 'false'}`;
+            if (this.aiDebugInputCount) {
+                this.aiDebugInputCount.textContent = `AI inputs recv/applied: ${recvTotal}/${appliedTotal}`;
+            }
+            if (this.aiDebugError) {
+                const err = gbe.lastError || null;
+                const errCount = typeof gbe.errorCount === 'number' ? gbe.errorCount : 0;
+                if (!err) {
+                    this.aiDebugError.textContent = `AI error: none (count=${errCount})`;
+                } else {
+                    this.aiDebugError.textContent = `AI error: [${err.step || '--'}] ${err.message || '--'} (tick=${err.tick || 0}, count=${errCount})`;
+                }
+            }
+            if (this.aiDebugTrainStats) {
+                const count = typeof info.rewardBatchCount === 'number' ? info.rewardBatchCount : '--';
+                const sum = typeof info.rewardBatchSum === 'number' ? info.rewardBatchSum.toFixed(2) : '--';
+                const steps = typeof info.trainStepsDelta === 'number' ? info.trainStepsDelta : '--';
+                this.aiDebugTrainStats.textContent = `Rewards/train: count=${count} sum=${sum} steps=${steps}`;
+            }
+            if (this.aiDebugPerformance) {
+                const trainMs = typeof info.perfTrainMs === 'number' ? info.perfTrainMs.toFixed(2) : '--';
+                const inferMs = typeof info.perfInferMs === 'number' ? info.perfInferMs.toFixed(2) : '--';
+                const saveMs = typeof info.asyncSaveMs === 'number' ? info.asyncSaveMs.toFixed(2) : '--';
+                const modelKb = typeof info.memModelBytes === 'number'
+                    ? (info.memModelBytes / 1024).toFixed(1)
+                    : '--';
+                const trainKb = typeof info.memTrainStateBytes === 'number'
+                    ? (info.memTrainStateBytes / 1024).toFixed(1)
+                    : '--';
+                const historyKb = typeof info.memHistoryBytes === 'number'
+                    ? (info.memHistoryBytes / 1024).toFixed(1)
+                    : '--';
+                this.aiDebugPerformance.textContent =
+                    `Performance:\ntrain=${trainMs}ms infer=${inferMs}ms asyncSave=${saveMs}ms\n` +
+                    `memory: model=${modelKb}KB train=${trainKb}KB history=${historyKb}KB`;
+            }
+            if (this.aiDebugInference) {
+                const epCount = typeof info.inferenceEpisodeCount === 'number' ? info.inferenceEpisodeCount : '--';
+                const avgReward = typeof info.inferenceAvgReward === 'number' ? info.inferenceAvgReward.toFixed(2) : '--';
+                const avgSteps = typeof info.inferenceAvgSteps === 'number' ? info.inferenceAvgSteps.toFixed(1) : '--';
+                const winRate = typeof info.inferenceWinRate === 'number' ? (info.inferenceWinRate * 100).toFixed(1) : '--';
+                const hitRate = typeof info.inferenceHitRate === 'number' ? (info.inferenceHitRate * 100).toFixed(1) : '--';
+                const hqRate = typeof info.inferenceHqRate === 'number' ? (info.inferenceHqRate * 100).toFixed(1) : '--';
+                const dealt = typeof info.inferenceAvgDamageDealt === 'number' ? info.inferenceAvgDamageDealt.toFixed(2) : '--';
+                const taken = typeof info.inferenceAvgDamageTaken === 'number' ? info.inferenceAvgDamageTaken.toFixed(2) : '--';
+                const timeToWin = typeof info.inferenceAvgTimeToWin === 'number' ? info.inferenceAvgTimeToWin.toFixed(1) : '--';
+                const ratio = (typeof info.inferenceAvgDamageDealt === 'number' && typeof info.inferenceAvgDamageTaken === 'number' && info.inferenceAvgDamageTaken > 0)
+                    ? (info.inferenceAvgDamageDealt / info.inferenceAvgDamageTaken).toFixed(2)
+                    : '--';
+                this.aiDebugInference.textContent =
+                    `Inference Measurement:\n` +
+                    `episodes=${epCount} avgReward=${avgReward} avgSteps=${avgSteps} winRate=${winRate}% timeToWin=${timeToWin}\n` +
+                    `hitRate=${hitRate}% hqRate=${hqRate}% damage=${dealt}/${taken} ratio=${ratio}`;
+            }
+            if (this.aiDebugModelInstances) {
+                const instances = Array.isArray(info.modelInstancesBrief) ? info.modelInstancesBrief : [];
+                if (!instances.length) {
+                    this.aiDebugModelInstances.textContent = 'Model instances: --';
+                } else {
+                    const lines = instances.map((item) => {
+                        const sessionId = item && item.sessionId ? String(item.sessionId).slice(0, 8) : '--';
+                        const wsId = item && item.wsId ? String(item.wsId) : '--';
+                        const state = item && item.state ? item.state : '--';
+                        return `session=${sessionId} ws=${wsId} state=${state}`;
+                    });
+                    this.aiDebugModelInstances.textContent = `Model instances:\n${lines.join('\n')}`;
+                }
+            }
+            if (this.aiDebugMoveLog) {
+                const episodeLog = info.episodeLog;
+                const episodeTick = info.episodeLogTick;
+                if (episodeLog && this.aiEpisodeLogs.length < 20) {
+                    const last = this.aiEpisodeLogs[this.aiEpisodeLogs.length - 1];
+                    const entry = `tick ${episodeTick ?? '--'} - ${episodeLog}`;
+                    if (entry !== last) {
+                        this.aiEpisodeLogs.push(entry);
+                    }
+                }
+                const tick = typeof info.steps === 'number' ? info.steps : '--';
+                const currentLine = info.receivedActions && info.receivedActions !== '--'
+                    ? `tick ${tick} - ${info.receivedActions}`
+                    : `tick ${tick} - --`;
+                const lines = [currentLine, ...this.aiEpisodeLogs.slice(-5)];
+                this.aiDebugMoveLog.textContent = lines.join('\n');
+            }
+            if (this.aiDebugConnLog) this.aiDebugConnLog.textContent = '';
+            return;
+        }
+        if (this.aiDebugState) this.aiDebugState.textContent = 'State: local-mode (no client RL)';
+        if (this.aiDebugAction) this.aiDebugAction.textContent = 'Action: --';
+        if (this.aiDebugReward) this.aiDebugReward.textContent = 'Reward: --';
+        if (this.aiDebugRewardReasons) this.aiDebugRewardReasons.textContent = 'Reward reasons: --';
+        if (this.aiDebugEpsilon) this.aiDebugEpsilon.textContent = 'Epsilon: --';
+        if (this.aiDebugTdLoss) this.aiDebugTdLoss.textContent = 'TD Loss: --';
+        if (this.aiDebugQMean) this.aiDebugQMean.textContent = 'Q mean: --';
+        if (this.aiDebugSteps) this.aiDebugSteps.textContent = `Steps: ${this.gameTicks}`;
+        if (this.aiDebugEpisodes) this.aiDebugEpisodes.textContent = 'Episodes: --';
+        if (this.aiDebugActionsStats) this.aiDebugActionsStats.textContent = 'Transitions/actions/GBE events: --/--/--';
+        if (this.aiDebugModelPool) this.aiDebugModelPool.textContent = 'Model pool available/total/in-use: --/--/--';
+        if (this.aiDebugBuildState) this.aiDebugBuildState.textContent = 'Build state: --';
+        if (this.aiDebugSentObserve) this.aiDebugSentObserve.textContent = 'Sent observe: --';
+        if (this.aiDebugWorkerAction) this.aiDebugWorkerAction.textContent = 'Worker action: --';
+        if (this.aiDebugReturnedAction) this.aiDebugReturnedAction.textContent = 'Action returned: --';
+        if (this.aiDebugInputCount) this.aiDebugInputCount.textContent = 'AI inputs recv/applied: --';
+        if (this.aiDebugError) this.aiDebugError.textContent = 'AI error: --';
+        if (this.aiDebugTrainStats) this.aiDebugTrainStats.textContent = 'Rewards/train: --';
+        if (this.aiDebugPerformance) this.aiDebugPerformance.textContent = 'Performance: --';
+        if (this.aiDebugInference) this.aiDebugInference.textContent = 'Inference Measurement: --';
+        if (this.aiDebugModelInstances) this.aiDebugModelInstances.textContent = 'Model instances: --';
+        if (this.aiDebugMoveLog) this.aiDebugMoveLog.textContent = 'tick -- - --';
+        if (this.aiDebugConnLog) this.aiDebugConnLog.textContent = '';
     }
 
     clearSpawnDebugLog() {
@@ -914,6 +1143,25 @@ class Game {
         if (didUpdate) {
             this.render();
         }
+
+        this.updateClientFps(currentMs);
+    }
+
+    updateClientFps(currentMs) {
+        if (!this.debugFps) return;
+        if (!this.clientFpsLastMs) {
+            this.clientFpsLastMs = currentMs;
+        }
+        this.clientFpsFrames += 1;
+        const elapsed = currentMs - this.clientFpsLastMs;
+        if (elapsed >= 1000) {
+            this.clientFps = Math.round((this.clientFpsFrames * 1000) / elapsed);
+            this.clientFpsFrames = 0;
+            this.clientFpsLastMs = currentMs;
+            if (this.showDebugBounds) {
+                this.debugFps.textContent = `Client FPS: ${this.clientFps}`;
+            }
+        }
     }
     
     update() {
@@ -929,6 +1177,20 @@ class Game {
         
         const bounds = this.getMapBounds();
         const controlEvents = this.input.getControlEvents();
+        if (this.networkMode && this.networkClient) {
+            const moveEvent = controlEvents.find((event) => (
+                event === 'move_up'
+                || event === 'move_down'
+                || event === 'move_left'
+                || event === 'move_right'
+            ));
+            const fire = controlEvents.includes('fire');
+            this.networkClient.sendInput(moveEvent || null, fire);
+            if (this.fx) {
+                this.networkTanks.forEach((tank) => tank.updateFx(this.fx));
+            }
+            return;
+        }
         
         // Update player
         if (this.player && this.player.isAlive()) {
@@ -964,7 +1226,6 @@ class Game {
         } else {
             // Player died
             if (!this.tryRespawnPlayer()) {
-                this.finalizeRlEpisode(0);
                 this.beginGameOver();
                 return;
             }
@@ -973,14 +1234,6 @@ class Game {
         // Update bullets
         this.bullets.forEach((bullet) => {
             bullet.update(bounds, this.mapData);
-            if (!bullet.active && bullet.blockedByNonDestructible && bullet.owner && bullet.owner.aiId) {
-                const weight = window.RL_CONFIG && window.RL_CONFIG.rewardWeights
-                    ? window.RL_CONFIG.rewardWeights.nonDestructiveShotPenalty
-                    : 0;
-                if (weight) {
-                    this.addRlEventReward(bullet.owner, weight);
-                }
-            }
         });
         this.bullets = this.bullets.filter(bullet => bullet.active);
         
@@ -988,10 +1241,6 @@ class Game {
         if (this.playerHQ && this.mapData) {
             const hqTile = this.mapData.getTile(this.playerHQ.row, this.playerHQ.col);
             if (hqTile !== TILE_TYPES.PLAYER_HQ) {
-                const reward = window.RL_CONFIG && window.RL_CONFIG.rewardWeights
-                    ? window.RL_CONFIG.rewardWeights.destroyHQ
-                    : 0;
-                this.finalizeRlEpisode(reward);
                 this.beginGameOver();
                 return;
             }
@@ -1012,43 +1261,39 @@ class Game {
         // Update enemies
         this.enemies.forEach(enemy => {
             if (enemy.isAlive()) {
-                const usedRl = this.updateEnemyWithRl(enemy, bounds);
-                if (!usedRl) {
-                    // Fallback: simple AI movement toward player
-                    const dx = this.player.x - enemy.x;
-                    const dy = this.player.y - enemy.y;
-                    const absDx = Math.abs(dx);
-                    const absDy = Math.abs(dy);
-                    let stepX = 0;
-                    let stepY = 0;
-                    
-                    if (absDx >= absDy) {
-                        stepX = dx === 0 ? 0 : (dx > 0 ? enemy.speed : -enemy.speed);
-                    } else {
-                        stepY = dy === 0 ? 0 : (dy > 0 ? enemy.speed : -enemy.speed);
-                    }
-                    
-                    if (stepX !== 0 || stepY !== 0) {
-                        const nextX = enemy.x + stepX;
-                        const nextY = enemy.y + stepY;
-                        if (this.canTankOccupy(nextX, enemy.y, enemy)) {
-                            enemy.x = nextX;
-                        }
-                        if (this.canTankOccupy(enemy.x, nextY, enemy)) {
-                            enemy.y = nextY;
-                        }
-                        if (stepX !== 0) {
-                            enemy.setDirection(stepX > 0 ? 1 : -1, 0);
-                        } else if (stepY !== 0) {
-                            enemy.setDirection(0, stepY > 0 ? 1 : -1);
-                        }
-                    }
+                const dx = this.player.x - enemy.x;
+                const dy = this.player.y - enemy.y;
+                const absDx = Math.abs(dx);
+                const absDy = Math.abs(dy);
+                let stepX = 0;
+                let stepY = 0;
 
-                    const halfEnemyW = enemy.width >> 1;
-                    const halfEnemyH = enemy.height >> 1;
-                    enemy.x = Math.max(halfEnemyW, Math.min(enemy.x, bounds.width - halfEnemyW));
-                    enemy.y = Math.max(halfEnemyH, Math.min(enemy.y, bounds.height - halfEnemyH));
+                if (absDx >= absDy) {
+                    stepX = dx === 0 ? 0 : (dx > 0 ? enemy.speed : -enemy.speed);
+                } else {
+                    stepY = dy === 0 ? 0 : (dy > 0 ? enemy.speed : -enemy.speed);
                 }
+
+                if (stepX !== 0 || stepY !== 0) {
+                    const nextX = enemy.x + stepX;
+                    const nextY = enemy.y + stepY;
+                    if (this.canTankOccupy(nextX, enemy.y, enemy)) {
+                        enemy.x = nextX;
+                    }
+                    if (this.canTankOccupy(enemy.x, nextY, enemy)) {
+                        enemy.y = nextY;
+                    }
+                    if (stepX !== 0) {
+                        enemy.setDirection(stepX > 0 ? 1 : -1, 0);
+                    } else if (stepY !== 0) {
+                        enemy.setDirection(0, stepY > 0 ? 1 : -1);
+                    }
+                }
+
+                const halfEnemyW = enemy.width >> 1;
+                const halfEnemyH = enemy.height >> 1;
+                enemy.x = Math.max(halfEnemyW, Math.min(enemy.x, bounds.width - halfEnemyW));
+                enemy.y = Math.max(halfEnemyH, Math.min(enemy.y, bounds.height - halfEnemyH));
             }
             enemy.updateFx(this.fx);
         });
@@ -1064,12 +1309,6 @@ class Game {
                         enemy.addFx('hit_tank', this.fx, hitPos.x, hitPos.y);
                     }
                     enemy.takeDamage(1);
-                    if (window.RL_CONFIG && window.RL_CONFIG.rewardWeights) {
-                        this.addRlEventReward(enemy, window.RL_CONFIG.rewardWeights.gotHit || 0);
-                    }
-                    if (window.RL_CONFIG && window.RL_CONFIG.rewardWeights && bullet.owner && bullet.owner !== this.player) {
-                        this.addRlEventReward(bullet.owner, window.RL_CONFIG.rewardWeights.hitAlly || 0);
-                    }
                     this.logHit('enemy', enemy);
                     bullet.active = false;
                     
@@ -1077,9 +1316,6 @@ class Game {
                         if (this.fx) {
                             const center = this.getTankBoundCenter(enemy);
                             this.fx.playFx('destroy_tank', center.x, center.y);
-                        }
-                        if (window.RL_CONFIG && window.RL_CONFIG.rewardWeights) {
-                            this.addRlEventReward(enemy, window.RL_CONFIG.rewardWeights.death || 0);
                         }
                         this.enemiesDestroyed += 1;
                         this.score += 100;
@@ -1099,9 +1335,6 @@ class Game {
                     this.player.addFx('hit_tank', this.fx, hitPos.x, hitPos.y);
                 }
                 this.player.takeDamage(1);
-                if (window.RL_CONFIG && window.RL_CONFIG.rewardWeights && bullet.owner) {
-                    this.addRlEventReward(bullet.owner, window.RL_CONFIG.rewardWeights.hitPlayer || 0);
-                }
                 this.logHit('player', this.player);
                 this.updateUI();
                 if (!this.player.isAlive() && this.fx) {
@@ -1130,67 +1363,6 @@ class Game {
                 this.updateUI();
             }
         });
-
-        // Deep RL: dense rewards and terminal transitions
-        if (this.rlEnabled && this.rlAgent && window.DeepRL && typeof window.DeepRL.computeStepReward === 'function') {
-            const boundsForRl = this.getMapBounds();
-            const deadEnemies = [];
-            this.enemies.forEach((enemy) => {
-                const data = this.ensureRlEnemyData(enemy);
-                if (!data) return;
-                const directionChanged = enemy.dirX !== data.prevDirX || enemy.dirY !== data.prevDirY;
-                const result = window.DeepRL.computeStepReward({
-                    enemy,
-                    player: this.player,
-                    mapData: this.mapData,
-                    hqTile: this.playerHQ,
-                    prevDistPlayer: data.prevDistPlayer,
-                    prevDistHQ: data.prevDistHQ,
-                    idleTicks: data.idleTicks,
-                    directionChanged,
-                    ticksSinceDirChange: data.ticksSinceDirChange || 0,
-                    bounds: boundsForRl,
-                    config: window.RL_CONFIG
-                });
-                const stepReward = result && typeof result.reward === 'number' ? result.reward : 0;
-                const eventReward = data.eventReward || 0;
-                data.pendingReward = (data.pendingReward || 0) + stepReward + eventReward;
-                data.eventReward = 0;
-                if (result) {
-                    if (typeof result.playerDist === 'number') data.prevDistPlayer = result.playerDist;
-                    if (typeof result.hqDist === 'number') data.prevDistHQ = result.hqDist;
-                }
-                if (directionChanged) {
-                    data.ticksSinceDirChange = 0;
-                } else {
-                    data.ticksSinceDirChange = (data.ticksSinceDirChange || 0) + 1;
-                }
-                data.prevDirX = enemy.dirX;
-                data.prevDirY = enemy.dirY;
-                if (!enemy.isAlive()) {
-                    deadEnemies.push({ enemy, data });
-                }
-            });
-            deadEnemies.forEach(({ enemy, data }) => {
-                const terminalState = window.DeepRL.buildState({
-                    enemy,
-                    player: this.player,
-                    mapData: this.mapData,
-                    hqTile: this.playerHQ,
-                    bounds: boundsForRl,
-                    idleTicks: data.idleTicks,
-                    aiTypeIndex: data.aiTypeIndex,
-                    config: window.RL_CONFIG
-                });
-                this.rlAgent.observe({
-                    id: data.id,
-                    state: terminalState,
-                    reward: data.pendingReward || 0,
-                    done: true
-                });
-                this.rlEnemyData.delete(enemy.aiId);
-            });
-        }
 
         this.updateAIDebugPanel();
         
@@ -1267,17 +1439,9 @@ class Game {
     
     spawnEnemy() {
         if (!this.mapData) return;
-        const config = window.RL_CONFIG || {};
-        const maxAlive = typeof config.maxEnemiesAlive === 'number' ? config.maxEnemiesAlive : 1;
         if (this.maxEnemyCount <= 0 || this.enemies.length >= this.maxEnemyCount) {
             if (this.showDebugBounds) {
                 this.appendSpawnDebugLine('ai respawn failed: max enemy count reached');
-            }
-            return;
-        }
-        if (this.enemies.length >= maxAlive) {
-            if (this.showDebugBounds) {
-                this.appendSpawnDebugLine('ai respawn failed: max alive cap reached');
             }
             return;
         }
@@ -1289,11 +1453,11 @@ class Game {
             return;
         }
         if (this.showDebugBounds) {
-            const remainingSlots = Math.max(0, Math.min(this.maxEnemyCount, maxAlive) - this.enemies.length);
+            const remainingSlots = Math.max(0, this.maxEnemyCount - this.enemies.length);
             this.appendSpawnDebugLine(`ai respawn slots available: ${remainingSlots}`);
         }
-        const labelList = Array.isArray(window.RL_CONFIG && window.RL_CONFIG.aiTankLabels)
-            ? window.RL_CONFIG.aiTankLabels
+        const labelList = Array.isArray(window.GAME_CONFIG && window.GAME_CONFIG.aiTankLabels)
+            ? window.GAME_CONFIG.aiTankLabels
             : ['normal_en'];
         const tankLabel = labelList[this.getRandomInt(labelList.length)] || 'normal_en';
         const spawnIndex = this.getRandomInt(spawns.length);
@@ -1328,8 +1492,6 @@ class Game {
                 this.appendSpawnDebugLine(`ai spawn init: ${JSON.stringify(initInfo)}`);
             }
             if (this.canTankOccupy(spawnPosition.x, spawnPosition.y, enemy)) {
-                this.ensureRlEnemyData(enemy);
-                this.ensureRlInitialized(enemy);
                 this.enemies.push(enemy);
                 spawned = true;
                 break;
@@ -1382,6 +1544,331 @@ class Game {
             x: rect.x + (rect.w >> 1),
             y: rect.y + (rect.h >> 1)
         };
+    }
+
+    mergeNetworkDelta(delta) {
+        const base = this.networkState || {
+            tick: 0,
+            mapName: '',
+            players: [],
+            bullets: [],
+            events: [],
+            gameOver: false,
+            gameOverReason: null,
+            gameOverFx: 'destroy_hq',
+            stats: null,
+            aiDebug: null,
+            gbeDebug: null
+        };
+        const next = { ...base };
+        if (typeof delta.tick === 'number') next.tick = delta.tick;
+        if (typeof delta.mapName === 'string') next.mapName = delta.mapName;
+        if (Object.prototype.hasOwnProperty.call(delta, 'gameOver')) next.gameOver = !!delta.gameOver;
+        if (Object.prototype.hasOwnProperty.call(delta, 'gameOverReason')) next.gameOverReason = delta.gameOverReason;
+        if (Object.prototype.hasOwnProperty.call(delta, 'gameOverFx')) next.gameOverFx = delta.gameOverFx;
+        if (Object.prototype.hasOwnProperty.call(delta, 'stats')) next.stats = delta.stats;
+        if (Object.prototype.hasOwnProperty.call(delta, 'aiDebug')) next.aiDebug = delta.aiDebug;
+        if (Object.prototype.hasOwnProperty.call(delta, 'gbeDebug')) next.gbeDebug = delta.gbeDebug;
+        if (Object.prototype.hasOwnProperty.call(delta, 'events')) next.events = delta.events || [];
+        else next.events = [];
+        if (Object.prototype.hasOwnProperty.call(delta, 'mapTiles')) next.mapTiles = delta.mapTiles;
+        if (Array.isArray(delta.mapTilesChanged)) next.mapTilesChanged = delta.mapTilesChanged;
+
+        if (delta.players) {
+            const playerMap = new Map((base.players || []).map((p) => [p.id, p]));
+            const upserts = this.decodeEntityUpserts(
+                delta.players,
+                ['id', 'label', 'role', 'x', 'y', 'dirX', 'dirY', 'health', 'maxHealth'],
+                'players'
+            );
+            upserts.forEach((entry) => {
+                if (entry && entry.id) playerMap.set(entry.id, entry);
+            });
+            (delta.players.removed || []).forEach((id) => playerMap.delete(id));
+            next.players = Array.from(playerMap.values());
+        } else {
+            next.players = base.players || [];
+        }
+
+        if (delta.bullets) {
+            const bulletMap = new Map((base.bullets || []).map((b) => [b.id, b]));
+            const upserts = this.decodeEntityUpserts(
+                delta.bullets,
+                ['id', 'x', 'y', 'dirX', 'dirY', 'radius'],
+                'bullets'
+            );
+            upserts.forEach((entry) => {
+                if (entry && entry.id) bulletMap.set(entry.id, entry);
+            });
+            (delta.bullets.removed || []).forEach((id) => bulletMap.delete(id));
+            next.bullets = Array.from(bulletMap.values());
+        } else {
+            next.bullets = base.bullets || [];
+        }
+        return next;
+    }
+
+    appendGBEDebugLine(line, eventKey = null) {
+        if (!this.showGBEDebug || !this.gbeDebugLog) return;
+        const key = eventKey || line;
+        if (this.gbeDebugLines.length > 0 && this.gbeLastEventKey === key) {
+            const last = this.gbeDebugLines[this.gbeDebugLines.length - 1];
+            last.count += 1;
+        } else {
+            this.gbeDebugLines.push({ text: line, count: 1, key });
+            this.gbeLastEventKey = key;
+            if (this.gbeDebugLines.length > 120) {
+                this.gbeDebugLines.shift();
+            }
+        }
+        this.gbeDebugLog.textContent = this.gbeDebugLines
+            .map((item) => (item.count > 1 ? `[x${item.count}] ${item.text}` : item.text))
+            .join('\n');
+        this.gbeDebugLog.scrollTop = this.gbeDebugLog.scrollHeight;
+    }
+
+    formatGBEDeltaSummary(delta) {
+        if (!delta || !Array.isArray(delta.events) || delta.events.length === 0) {
+            return null;
+        }
+        const eventText = delta.events.map((event) => {
+            const name = event && (event.name || event.type) ? (event.name || event.type) : 'event';
+            const tankId = event && event.tankId ? String(event.tankId).slice(0, 6) : null;
+            return tankId ? `${name}@${tankId}` : name;
+        }).join(', ');
+        return `events=${eventText}`;
+    }
+
+    decodeAIDebugPayload(packed, channel = 'ai') {
+        if (!packed) return null;
+        if (!Array.isArray(packed.values)) {
+            return packed;
+        }
+        if (Array.isArray(packed.labels) && packed.labels.length > 0) {
+            if (channel === 'gbe') this.gbeDebugLabels = packed.labels.slice();
+            else this.aiDebugLabels = packed.labels.slice();
+        }
+        const labels = channel === 'gbe'
+            ? (Array.isArray(this.gbeDebugLabels) ? this.gbeDebugLabels : null)
+            : (Array.isArray(this.aiDebugLabels) ? this.aiDebugLabels : null);
+        if (!labels || labels.length === 0) {
+            return null;
+        }
+        const values = packed.values || [];
+        const decoded = {};
+        const limit = Math.min(labels.length, values.length);
+        for (let i = 0; i < limit; i++) {
+            decoded[labels[i]] = values[i];
+        }
+        return decoded;
+    }
+
+    decodeEntityUpserts(payload, fallbackLabels, cacheKey) {
+        if (!payload || !Array.isArray(payload.upserts)) return [];
+        let labels = null;
+        if (Array.isArray(payload.labels) && payload.labels.length > 0) {
+            labels = payload.labels.slice();
+            if (cacheKey === 'players') this.networkPlayerStateLabels = labels;
+            if (cacheKey === 'bullets') this.networkBulletStateLabels = labels;
+        } else if (cacheKey === 'players' && Array.isArray(this.networkPlayerStateLabels)) {
+            labels = this.networkPlayerStateLabels;
+        } else if (cacheKey === 'bullets' && Array.isArray(this.networkBulletStateLabels)) {
+            labels = this.networkBulletStateLabels;
+        } else {
+            labels = fallbackLabels;
+        }
+        return payload.upserts.map((entry) => {
+            if (!Array.isArray(entry)) return entry;
+            const decoded = {};
+            const limit = Math.min(labels.length, entry.length);
+            for (let i = 0; i < limit; i++) {
+                decoded[labels[i]] = entry[i];
+            }
+            return decoded;
+        });
+    }
+
+    applyNetworkState(state, isDelta = false) {
+        const resolvedState = isDelta ? this.mergeNetworkDelta(state) : state;
+        this.networkState = resolvedState;
+        this.backendAIDebug = this.decodeAIDebugPayload(resolvedState.aiDebug, 'ai');
+        this.backendGBEDebug = this.decodeAIDebugPayload(resolvedState.gbeDebug, 'gbe');
+        if (this.gbeDebugMeta && this.backendGBEDebug) {
+            const sessionCount = typeof this.backendGBEDebug.sessionCount === 'number'
+                ? this.backendGBEDebug.sessionCount
+                : '--';
+            const src = this.backendGBEDebug.stateSource || '--';
+            const recvTotal = typeof this.backendGBEDebug.recvTotal === 'number'
+                ? this.backendGBEDebug.recvTotal
+                : '--';
+            const appliedTotal = typeof this.backendGBEDebug.appliedTotal === 'number'
+                ? this.backendGBEDebug.appliedTotal
+                : '--';
+            const errCount = typeof this.backendGBEDebug.errorCount === 'number'
+                ? this.backendGBEDebug.errorCount
+                : '--';
+            const aiSockets = typeof this.backendGBEDebug.aiSocketCount === 'number'
+                ? this.backendGBEDebug.aiSocketCount
+                : '--';
+            const clientSockets = typeof this.backendGBEDebug.clientSocketCount === 'number'
+                ? this.backendGBEDebug.clientSocketCount
+                : '--';
+            const backendFps = typeof this.backendFps === 'number' && this.backendFps > 0
+                ? this.backendFps
+                : '--';
+            this.gbeDebugMeta.textContent = `GBE src: ${src} | Sessions: ${sessionCount} | AI inputs recv/applied: ${recvTotal}/${appliedTotal} | sockets ai/client: ${aiSockets}/${clientSockets} | errCount: ${errCount} | Backend FPS: ${backendFps}`;
+        }
+        if (this.gbePlayerIds && this.gbeAiIds) {
+            const players = (resolvedState.players || []).filter((entry) => String(entry.label || '').endsWith('_pl'));
+            const ais = (resolvedState.players || []).filter((entry) => String(entry.label || '').endsWith('_en'));
+            this.gbePlayerIds.textContent = players.length
+                ? players.map((entry) => String(entry.id || '').slice(0, 6)).join('\n')
+                : '--';
+            this.gbeAiIds.textContent = ais.length
+                ? ais.map((entry) => String(entry.id || '').slice(0, 6)).join('\n')
+                : '--';
+        }
+        if (resolvedState.mapTiles && this.mapData) {
+            this.mapData.tiles = resolvedState.mapTiles;
+        }
+        if (Array.isArray(resolvedState.mapTilesChanged) && this.mapData && Array.isArray(this.mapData.tiles)) {
+            resolvedState.mapTilesChanged.forEach((change) => {
+                const row = change && Number.isInteger(change.row) ? change.row : -1;
+                const col = change && Number.isInteger(change.col) ? change.col : -1;
+                const tileId = change && Number.isInteger(change.tileId) ? change.tileId : null;
+                if (row >= 0 && col >= 0 && tileId !== null && this.mapData.tiles[row] && col < this.mapData.tiles[row].length) {
+                    this.mapData.tiles[row][col] = tileId;
+                }
+            });
+        }
+        if (resolvedState.stats) {
+            const nextTick = typeof resolvedState.stats.ticks === 'number' ? resolvedState.stats.ticks : null;
+            if (typeof nextTick === 'number') {
+                const now = performance.now();
+                if (typeof this.backendFpsLastTick === 'number') {
+                    const tickDelta = nextTick - this.backendFpsLastTick;
+                    const msDelta = now - this.backendFpsLastMs;
+                    if (tickDelta > 0 && msDelta > 0) {
+                        this.backendFps = Math.round((tickDelta * 1000) / msDelta);
+                    }
+                }
+                this.backendFpsLastTick = nextTick;
+                this.backendFpsLastMs = now;
+                this.gameTicks = nextTick;
+            }
+            this.enemiesDestroyed = typeof resolvedState.stats.enemiesDestroyed === 'number'
+                ? resolvedState.stats.enemiesDestroyed
+                : this.enemiesDestroyed;
+        }
+        if (this.showGBEDebug && resolvedState.stats && typeof resolvedState.stats.ticks === 'number') {
+            // GBE panel keeps event-focused logs.
+        }
+        const nextPlayers = [];
+        const nextEnemies = [];
+        const nextTanks = new Map();
+        const nextPrevPositions = new Map();
+        (resolvedState.players || []).forEach((entry) => {
+            let tank = this.networkTanks.get(entry.id);
+            if (!tank) {
+                const def = this.tankDefinitions ? this.tankDefinitions[entry.label] : null;
+                tank = new Tank(entry.x, entry.y, {
+                    color: '#4CAF50',
+                    textureImage: def ? def.textureImage : null,
+                    boundMin: def ? def.bound_min : null,
+                    boundMax: def ? def.bound_max : null,
+                    speed: def ? def.speed : 2,
+                    shellSize: def ? def.shell_size : 2,
+                    shellSpeed: def ? def.shell_speed : 4,
+                    shellColor: def ? def.shell_color : 'green',
+                    health: entry.health,
+                    maxHealth: entry.maxHealth,
+                    cooldown: def ? def.cooldown : 0,
+                    tileSize: this.mapData ? this.mapData.tileSize : null
+                });
+            }
+            tank.x = entry.x;
+            tank.y = entry.y;
+            tank.health = entry.health;
+            tank.maxHealth = entry.maxHealth;
+            tank.setDirection(entry.dirX, entry.dirY);
+            nextTanks.set(entry.id, tank);
+            if (entry.id === this.networkPlayerId) {
+                this.player = tank;
+                const prev = this.networkPrevPositions.get(entry.id);
+                const moved = prev ? (prev.x !== entry.x || prev.y !== entry.y) : false;
+                if (this.fx) {
+                    if (moved) {
+                        tank.addFx('move', this.fx, entry.x, entry.y);
+                    } else {
+                        tank.stopFx('move');
+                    }
+                }
+                nextPrevPositions.set(entry.id, { x: entry.x, y: entry.y });
+            } else {
+                nextEnemies.push(tank);
+            }
+            nextPlayers.push(tank);
+        });
+        this.networkTanks = nextTanks;
+        this.enemies = nextEnemies;
+        this.networkPrevPositions = nextPrevPositions;
+        this.bullets = (resolvedState.bullets || []).map((bullet) => {
+            const b = new Bullet(
+                bullet.x,
+                bullet.y,
+                bullet.dirX,
+                bullet.dirY,
+                0,
+                null,
+                { radius: bullet.radius || 2, color: '#FFD700' }
+            );
+            b.active = true;
+            return b;
+        });
+
+        if (this.fx && Array.isArray(resolvedState.events)) {
+            resolvedState.events.forEach((event) => {
+                if (event && event.type === 'fx' && event.name) {
+                    this.fx.playFx(event.name, event.x, event.y);
+                }
+            });
+        }
+
+        if (resolvedState.gameOver && !this.gameOverStarted) {
+            this.gameOverStarted = true;
+            this.gameOverFxName = resolvedState.gameOverFx || 'destroy_hq';
+            this.state = 'ending';
+        }
+        this.updateAIDebugPanel();
+
+        if (isDelta && this.showGBEDebug && state && state.delta) {
+            const summary = this.formatGBEDeltaSummary(state);
+            if (summary) {
+                this.appendGBEDebugLine(summary, summary);
+            }
+        }
+
+        if (this.showDebugBounds && resolvedState.tick && resolvedState.tick !== this.lastNetLogTick) {
+            if (resolvedState.tick % 30 === 0) {
+                this.appendSpawnDebugLine(
+                    `net tick=${resolvedState.tick} recv=${this.netStats.tickRecv} sent=${this.netStats.tickSent} totalRecv=${this.netStats.totalRecv} totalSent=${this.netStats.totalSent}`
+                );
+                const b = this.netStats.breakdown || {};
+                const partOrder = ['players', 'bullets', 'events', 'aiDebug', 'gbeDebug', 'stats', 'mapTilesChanged', 'meta'];
+                const tickParts = b.recvStatePartsTick || {};
+                const aiDebugBytes = typeof tickParts.aiDebug === 'number' ? tickParts.aiDebug : 0;
+                const gbeDebugBytes = typeof tickParts.gbeDebug === 'number' ? tickParts.gbeDebug : 0;
+                const tickPartsText = partOrder
+                    .map((key) => `${key}=${typeof tickParts[key] === 'number' ? tickParts[key] : 0}`)
+                    .join(', ');
+                this.appendSpawnDebugLine(`net-breakdown recv:state parts tick aiDebugBytes=${aiDebugBytes}, gbeDebugBytes=${gbeDebugBytes} { ${tickPartsText} }`);
+                this.appendSpawnDebugLine('');
+                if (this.networkClient) {
+                    this.networkClient.resetTickStats();
+                }
+            }
+            this.lastNetLogTick = resolvedState.tick;
+        }
     }
 
     logHit(targetLabel, target) {
@@ -1564,10 +2051,13 @@ class Game {
         if (this.player) {
             document.getElementById('health').textContent = `Health: ${Math.ceil(this.player.health)}`;
         }
+        if (this.sessionIdLabel) {
+            const sessionId = this.currentSessionId || (this.networkClient ? this.networkClient.sessionId : null);
+            this.sessionIdLabel.textContent = sessionId ? `Session: ${sessionId}` : 'Session: --';
+        }
     }
     
     gameOver() {
-        this.releaseRlModelKey();
         this.state = 'gameOver';
         const totalMs = this.gameTicks * this.fixedTimeStepMs;
         const totalSeconds = Math.floor(totalMs / 1000);
@@ -1578,13 +2068,10 @@ class Game {
         document.getElementById('final-time').textContent = `Time: ${timeLabel}`;
         document.getElementById('final-destroyed').textContent = `Destroyed: ${this.enemiesDestroyed}`;
         document.getElementById('game-over-screen').classList.remove('hidden');
+        this.updateAutoRestartToggleUI();
+        this.startAutoRestartTimer();
     }
 
-    releaseRlModelKey() {
-        if (this.rlAgent && typeof this.rlAgent.releaseModelKey === 'function') {
-            this.rlAgent.releaseModelKey();
-        }
-    }
 }
 
 // Initialize game when page loads

@@ -12,16 +12,28 @@
             <div id="title-bar">
                 <div id="score">Score: 0</div>
                 <div id="health">Health: 100</div>
+                <div id="session-id-bar">
+                    <span id="session-id-label">Session: --</span>
+                    <button id="copy-session-id-button" type="button">Copy</button>
+                </div>
                 <button id="scale-toggle" type="button">Scale: Off</button>
                 <button id="debug-toggle" type="button">Debug: Off</button>
                 <button id="debug-ai-toggle" type="button">DebugAI: Off</button>
+                <button id="auto-restart-toggle" type="button">Auto Play Again: Off</button>
+                <button id="debug-gbe-toggle" type="button">DebugGBE: Off</button>
             </div>
             <canvas id="gameCanvas"></canvas>
             <div id="start-screen">
                 <h1>Tank Arena</h1>
                 <p>Use WASD or Arrow Keys to move</p>
                 <p>Use Mouse to aim and shoot</p>
-                <button id="start-button">Start Game</button>
+                <div class="session-controls">
+                    <button id="start-button">Create Session</button>
+                    <div class="join-session">
+                        <input id="session-id-input" type="text" placeholder="Session ID" />
+                        <button id="join-button">Join Session</button>
+                    </div>
+                </div>
             </div>
             <div id="game-over-screen" class="hidden">
                 <h1>Game Over</h1>
@@ -29,10 +41,14 @@
                 <p id="final-time">Time: 00:00</p>
                 <p id="final-destroyed">Destroyed: 0</p>
                 <button id="restart-button">Play Again</button>
+                <div class="auto-restart">
+                    <span id="auto-restart-countdown">Next game in: --</span>
+                </div>
             </div>
         </div>
         <div id="debug-panel" class="hidden">
             <div class="debug-title">Debug Info</div>
+            <div id="debug-fps">Client FPS: --</div>
             <div id="player-tile-pos">Tile: (0, 0)</div>
             <pre id="spawn-debug-log" class="debug-log"></pre>
         </div>
@@ -41,26 +57,45 @@
             <div id="ai-debug-state">State: --</div>
             <div id="ai-debug-action">Action: --</div>
             <div id="ai-debug-reward">Reward: --</div>
+            <div id="ai-debug-reward-reasons">Reward reasons: --</div>
             <div id="ai-debug-epsilon">Epsilon: --</div>
-            <div id="ai-debug-loss">Loss: --</div>
+            <div id="ai-debug-td-loss">TD Loss: --</div>
+            <div id="ai-debug-q-mean">Q mean: --</div>
             <div id="ai-debug-steps">Steps: --</div>
             <div id="ai-debug-episodes">Episodes: --</div>
+            <div id="ai-debug-actions-stats">Transitions/actions: --/--</div>
+            <div id="ai-debug-model-pool">Model pool available/total: --/--</div>
             <div id="ai-debug-build-state">Build state: --</div>
             <div id="ai-debug-sent-observe">Sent observe: --</div>
             <div id="ai-debug-worker-action">Worker action: --</div>
             <div id="ai-debug-returned-action">Action returned: --</div>
+            <div id="ai-debug-input-count">AI inputs recv/applied: --</div>
+            <div id="ai-debug-error">AI error: --</div>
+            <div id="ai-debug-train-stats">Rewards/train: --</div>
+            <pre id="ai-debug-performance" class="debug-log"></pre>
+            <pre id="ai-debug-inference" class="debug-log"></pre>
+            <pre id="ai-debug-model-instances" class="debug-log"></pre>
+            <pre id="ai-debug-move-log" class="debug-log"></pre>
+        </div>
+        <div id="gbe-debug-panel" class="hidden">
+            <div class="debug-title">Game Backend Debug</div>
+            <div id="gbe-debug-meta">Max AI allowed: --</div>
+            <div id="gbe-id-table" class="gbe-id-table">
+                <div class="gbe-id-head">Player</div>
+                <div class="gbe-id-head">AI</div>
+                <div id="gbe-player-ids" class="gbe-id-col">--</div>
+                <div id="gbe-ai-ids" class="gbe-id-col">--</div>
+            </div>
+            <pre id="gbe-debug-log" class="debug-log"></pre>
         </div>
     </div>
     <script src="js/global-define.js"></script>
     <script src="js/game-config.js"></script>
     <script src="DeepRL/rl-config.js"></script>
-    <script src="DeepRL/rl-utils.js"></script>
-    <script src="DeepRL/rl-state.js"></script>
-    <script src="DeepRL/rl-reward.js"></script>
-    <script src="DeepRL/rl-agent.js"></script>
     <script src="js/map-loader.js"></script>
     <script src="js/render-util.js"></script>
     <script src="js/fx.js"></script>
+    <script src="js/network.js"></script>
     <script src="js/input.js"></script>
     <script src="js/tank.js"></script>
     <script src="js/game.js"></script>

@@ -14,7 +14,8 @@ window.RL_CONFIG = {
     gamma: 0.95,
     batchSize: 32,
     replaySize: 10000,
-    trainEvery: 4,
+    trainEvery: 3,
+    transiteGenInterval: 3, // GBE sends one transition every N ticks.
     targetUpdateEvery: 200,
     epsilon: {
         start: 1.0,
@@ -28,18 +29,21 @@ window.RL_CONFIG = {
     aimDotThreshold: 0.85,
     maxEnemySpeed: 4,
     rewardWeights: {
-        hitPlayer: 2.0,
-        gotHit: -2.0,
-        destroyHQ: 5.0,
-        death: -5.0,
-        playerApproach: 0.05,
-        hqApproach: 0.1,
-        playerAim: 0.01,
-        hqAim: 0.01,
-        idlePenalty: -0.05,
-        directionChangePenalty: -0.05,
-        nonDestructiveShotPenalty: -0.03,
-        hitAlly: -1.0
+        hitPlayer: 2.0, // AI shell predicted to hit player.
+        gotHit: -0.5, // AI tank predicted to be hit by a shell.
+        destroyHQ: 3.0, // AI shell predicted to hit HQ.
+        death: -1.0, // AI tank destroyed.
+        playerAim: 0.05, // AI aims at player (LOS + aim dot threshold).
+        hqAim: 0.1, // AI aims at HQ (LOS + aim dot threshold).
+        exploreStallPenalty: -0.001, // AI stalls without exploring new tiles.
+        mapTileTouched: 0.04, // AI touches a new map tile.
+        idlePenalty: -0.05, // AI stays idle too long.
+        directionChangePenalty: -0.05, // AI changes direction too frequently.
+        nonDestructiveShotPenalty: -0.03, // AI shell predicted to hit non-destructive tile.
+        destructiveShot: 0.1, // AI shell predicted to hit destructive tile.
+        hitAlly: -1.0, // AI shell predicted to hit another AI.
+        collisionPenalty: -0.03, // AI move blocked by collision.
+        stuckAreaPenalty: -0.05 // AI stays in the same 3x3 tiles too long.
     },
     directionChangeCooldown: 6,
     maxTileId: 7,

@@ -59,9 +59,92 @@ The game uses a local server plus the DeepRL backend for persistence.
 start-dev.bat
 ```
 
+Install Game Backend dependencies once:
+
+```
+python -m pip install -r scripts/game-backend-requirements.txt
+```
+
 This starts:
-- Backend: `http://127.0.0.1:5050`
+- RL Backend: `http://127.0.0.1:5050`
+- Game Backend: `http://127.0.0.1:5051`
 - Game: `http://127.0.0.1:5173`
+
+## Runtime Architecture
+
+### Component Roles
+
+- **Game Client** (`index.html` + `js/*`)
+  - Render-only + input relay in online mode.
+  - Sends player control events to Game Backend via WebSocket.
+  - Receives authoritative delta state from Game Backend and renders it.
+
+- **GBE (Game Backend)** (`scripts/game-backend.py`)
+  - Authoritative game simulation loop (30Hz), sessions, collision, bullets, spawn, game-over.
+  - Owns all authoritative entities and state transitions.
+  - Broadcasts delta state to all game clients in the same session.
+  - Sends transitions to AI Backend when AI socket is connected.
+
+- **AI Backend** (`DeepRL/ai-backend/server.py`)
+  - The unique runtime `role=ai` peer connected to GBE session sockets.
+  - Consumes transitions from GBE, performs training/action generation, and sends AI inputs back to GBE.
+  - Reads/writes model instances through RL Backend HTTP APIs.
+
+- **RL Backend** (`DeepRL/backend/server.py`)
+  - Model persistence and allocation service around `rl-models.db`.
+  - Provides model load/save/allocate/release APIs for AI Backend.
+  - Does **not** connect to GBE as an AI runtime client.
+
+### Game Backend API (v1)
+
+- `POST /session` → create session
+- `POST /session/:id/join` → join session
+- `POST /session/:id/ai-input` → submit AI move events (AI backend push)
+- WebSocket `ws://127.0.0.1:5051/ws?sessionId=...` for state + inputs
+
+## Revised Message Flow
+
+```mermaid
+sequenceDiagram
+participant Client as Game Client
+participant GBE as Game Backend
+participant AI as AI Backend
+participant RL as RL Backend (Model DB API)
+
+Client->>GBE: POST /session { mapName }
+GBE-->>Client: { sessionId, playerId, map, state(init), modelKey }
+Client->>GBE: WS connect + join(role=player, playerId)
+AI->>GBE: WS connect + join(role=ai, sessionId)
+AI->>RL: GET/POST model APIs (allocate/load/save/release)
+
+loop Each Tick (30Hz)
+    Client->>GBE: input(move/fire)
+    GBE->>GBE: apply player+AI inputs, simulate, build delta
+    GBE-->>Client: state(delta)
+
+    alt AI socket connected
+        GBE-->>AI: transition(prevState,nextState,reward,tick)
+        AI->>GBE: input(role=ai,tankId,move,fire)
+    else AI not connected
+        GBE-->>Client: error("AI service unreachable")
+    end
+end
+```
+
+### Connection Initialization + Determination
+
+- AI Backend is the only service that should join GBE as `role=ai`.
+- RL Backend should remain DB/API only and must not open AI role sockets to GBE.
+- If AI socket is not connected, GBE marks AI connection error in debug and continues session loop without AI actions.
+
+### Game Backend Environment Variables
+
+- `GAME_BACKEND_PORT` (default `5051`)
+- `AI_SERVICE_URL` (default `http://127.0.0.1:6060`)
+- `RL_DB_URL` (default `http://127.0.0.1:5050`)
+- `RL_MODEL_BASE_KEY` (default `tank-ai-dqn`)
+- `MAX_AI_TANKS` (default `4`)
+- `AI_TANK_LABELS` (default `normal_en`)
 
 ## Technical Details
 
