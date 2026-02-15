@@ -5,20 +5,38 @@ import os
 import random
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, unquote, parse_qs
+from pathlib import Path
+import sys
 
 import aiohttp
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(ROOT_DIR, "rl-models.db")
-HOST = "127.0.0.1"
-PORT = int(os.getenv("PORT", "5050"))
+ROOT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = ROOT_DIR.parent.parent
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.append(str(SCRIPTS_DIR))
+from shared_config import load_deploy_config  # noqa: E402
+
+DEPLOY_CONFIG = load_deploy_config(
+    required_keys=[
+        "RL_DB_PATH",
+        "RL_BACKEND_HOST",
+        "RL_BACKEND_PORT",
+        "GAME_BACKEND_URL",
+        "GAME_BACKEND_WS_URL",
+    ]
+)
+_db_path_raw = str(DEPLOY_CONFIG.get("RL_DB_PATH") or "DeepRL/backend/rl-models.db")
+DB_PATH = str((PROJECT_ROOT / _db_path_raw).resolve()) if not _db_path_raw.startswith("/") else _db_path_raw
+HOST = str(DEPLOY_CONFIG.get("RL_BACKEND_HOST") or "127.0.0.1")
+PORT = int(DEPLOY_CONFIG.get("RL_BACKEND_PORT") or 5050)
 FREE_LIST = {}
 LAST_POPPED = {}
-GAME_BACKEND_URL = os.getenv("GAME_BACKEND_URL", "http://127.0.0.1:5051").rstrip("/")
-GAME_BACKEND_WS_URL = os.getenv("GAME_BACKEND_WS_URL", "ws://127.0.0.1:5051/ws").rstrip("/")
+GAME_BACKEND_URL = str(DEPLOY_CONFIG.get("GAME_BACKEND_URL") or "http://127.0.0.1:5051").rstrip("/")
+GAME_BACKEND_WS_URL = str(DEPLOY_CONFIG.get("GAME_BACKEND_WS_URL") or "ws://127.0.0.1:5051/ws").rstrip("/")
 AI_POLL_INTERVAL_SECONDS = float(os.getenv("AI_POLL_INTERVAL_SECONDS", "1.0"))
 RL_GAMMA = float(os.getenv("RL_GAMMA", "0.95"))
 RL_ALPHA = float(os.getenv("RL_ALPHA", "0.12"))
@@ -348,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/health":
+        if parsed.path in ("/health", "/healthz"):
             self._send_json(200, {"ok": True})
             return
         if parsed.path == "/api/rl-model-keys":
@@ -388,7 +406,7 @@ class Handler(BaseHTTPRequestHandler):
                 LAST_POPPED[map_key] = model_key
                 self._send_json(200, {"modelKey": model_key, "isNew": False})
                 return
-            suffix = datetime.now(datetime.UTC).strftime("%Y%m%d%H%M%S%f")
+            suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
             model_key = f"{base_key}-{map_key}-{suffix}"
             copied_from = LAST_POPPED.get(map_key)
             if copied_from:
@@ -403,7 +421,7 @@ class Handler(BaseHTTPRequestHandler):
                     ).fetchone()
                 if row:
                     model_json, weight_specs, weight_data, training_config, metadata = row
-                    now = datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
+                    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                     with sqlite3.connect(DB_PATH) as conn:
                         conn.execute(
                             """
@@ -485,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
             if not model_topology or not weight_specs or not weight_data_base64:
                 self._send_json(400, {"error": "Missing model data"})
                 return
-            now = datetime.utcnow().isoformat() + "Z"
+            now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute(
                     """

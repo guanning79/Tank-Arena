@@ -15,13 +15,27 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Deque
 from collections import deque
+import sys
 
 import aiohttp
 import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-GAME_BACKEND_URL = os.getenv("GAME_BACKEND_URL", "http://127.0.0.1:5051")
-RL_DB_URL = os.getenv("RL_DB_URL", "http://127.0.0.1:5050")
+SCRIPTS_DIR = ROOT_DIR / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.append(str(SCRIPTS_DIR))
+from shared_config import load_deploy_config  # noqa: E402
+
+DEPLOY_CONFIG = load_deploy_config(
+    required_keys=[
+        "GAME_BACKEND_URL",
+        "GAME_BACKEND_WS_URL",
+        "RL_DB_URL",
+    ]
+)
+GAME_BACKEND_URL = str(DEPLOY_CONFIG.get("GAME_BACKEND_URL") or "http://127.0.0.1:5051").rstrip("/")
+GAME_BACKEND_WS_URL = str(DEPLOY_CONFIG.get("GAME_BACKEND_WS_URL") or "ws://127.0.0.1:5051/ws").rstrip("/")
+RL_DB_URL = str(DEPLOY_CONFIG.get("RL_DB_URL") or "http://127.0.0.1:5050").rstrip("/")
 MODEL_BASE_KEY = os.getenv("RL_MODEL_BASE_KEY", "tank-ai-dqn")
 
 POLL_INTERVAL = float(os.getenv("AI_POLL_INTERVAL", "2.0"))
@@ -609,7 +623,7 @@ class AiBackend:
         if session.ws is not None and not session.ws.closed:
             with contextlib.suppress(Exception):
                 await session.ws.close()
-        ws = await self.http.ws_connect(f"{GAME_BACKEND_URL}/ws?sessionId={session.session_id}")
+        ws = await self.http.ws_connect(f"{GAME_BACKEND_WS_URL}?sessionId={session.session_id}")
         session.ws = ws
         await ws.send_json({"type": "join", "role": "ai", "sessionId": session.session_id})
         asyncio.create_task(self.listen_ws(session))

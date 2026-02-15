@@ -3,6 +3,20 @@ setlocal
 
 set ROOT_DIR=%~dp0
 
+echo Setting deploy profile to local...
+python "%ROOT_DIR%scripts\set_deploy_profile.py" local
+if errorlevel 1 (
+    echo Failed to set deploy profile.
+    exit /b 1
+)
+
+echo Generating runtime config...
+python "%ROOT_DIR%scripts\generate_runtime_config.py"
+if errorlevel 1 (
+    echo Failed to generate runtime config.
+    exit /b 1
+)
+
 echo Starting DeepRL backend...
 start "DeepRL Backend" /D "%ROOT_DIR%DeepRL\backend" python server.py
 

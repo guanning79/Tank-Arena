@@ -9,9 +9,19 @@ import uuid
 from pathlib import Path
 
 from aiohttp import web, WSMsgType
+from shared_config import load_deploy_config
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-GAME_BACKEND_PORT = int(os.getenv("GAME_BACKEND_PORT", "5051"))
+DEPLOY_CONFIG = load_deploy_config(
+    required_keys=[
+        "GAME_BACKEND_HOST",
+        "GAME_BACKEND_PORT",
+        "RL_DB_URL",
+    ]
+)
+GAME_BACKEND_HOST = str(DEPLOY_CONFIG.get("GAME_BACKEND_HOST") or "127.0.0.1")
+GAME_BACKEND_PORT = int(DEPLOY_CONFIG.get("GAME_BACKEND_PORT") or 5051)
+RL_DB_URL = str(DEPLOY_CONFIG.get("RL_DB_URL") or "http://127.0.0.1:5050")
 TICK_MS = 33
 
 TILE_TYPES = {
@@ -2294,6 +2304,18 @@ async def handle_list_sessions(request):
     return web.json_response({"sessions": active})
 
 
+async def handle_healthz(request):
+    return web.json_response(
+        {
+            "ok": True,
+            "service": "game-backend",
+            "host": GAME_BACKEND_HOST,
+            "port": GAME_BACKEND_PORT,
+            "rlDbUrl": RL_DB_URL,
+        }
+    )
+
+
 async def handle_ai_input(request):
     session_id = request.match_info.get("sessionId")
     session = sessions.get(session_id)
@@ -2496,6 +2518,7 @@ async def on_cleanup(app):
 
 def main():
     app = web.Application(middlewares=[cors_middleware])
+    app.router.add_get("/healthz", handle_healthz)
     app.router.add_get("/sessions", handle_list_sessions)
     app.router.add_post("/session", handle_create_session)
     app.router.add_post("/session/{sessionId}/join", handle_join_session)
@@ -2503,8 +2526,8 @@ def main():
     app.router.add_get("/ws", websocket_handler)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
-    print(f"Game backend running at http://127.0.0.1:{GAME_BACKEND_PORT}")
-    web.run_app(app, host="127.0.0.1", port=GAME_BACKEND_PORT)
+    print(f"Game backend running at http://{GAME_BACKEND_HOST}:{GAME_BACKEND_PORT}")
+    web.run_app(app, host=GAME_BACKEND_HOST, port=GAME_BACKEND_PORT)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+{
+  "GAME_BACKEND_URL": "http://127.0.0.1:5051",
+  "GAME_BACKEND_WS_URL": "ws://127.0.0.1:5051/ws",
+  "RL_DB_URL": "http://127.0.0.1:5050",
+  "RL_DB_PATH": "DeepRL/backend/rl-models.db",
+  "CLIENT_BACKEND_URL": "http://127.0.0.1:5051",
+  "CLIENT_BACKEND_WS_URL": "ws://127.0.0.1:5051/ws",
+  "GAME_BACKEND_HOST": "127.0.0.1",
+  "GAME_BACKEND_PORT": 5051,
+  "RL_BACKEND_HOST": "127.0.0.1",
+  "RL_BACKEND_PORT": 5050
+}

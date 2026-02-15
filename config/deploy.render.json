@@ -1,0 +1,12 @@
+{
+  "GAME_BACKEND_URL": "https://tank-arena-gbe.onrender.com",
+  "GAME_BACKEND_WS_URL": "wss://tank-arena-gbe.onrender.com/ws",
+  "RL_DB_URL": "http://tank-arena-rl:5050",
+  "RL_DB_PATH": "/var/data/rl-models.db",
+  "CLIENT_BACKEND_URL": "https://tank-arena-gbe.onrender.com",
+  "CLIENT_BACKEND_WS_URL": "wss://tank-arena-gbe.onrender.com/ws",
+  "GAME_BACKEND_HOST": "0.0.0.0",
+  "GAME_BACKEND_PORT": 5051,
+  "RL_BACKEND_HOST": "0.0.0.0",
+  "RL_BACKEND_PORT": 5050
+}

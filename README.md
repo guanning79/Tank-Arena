@@ -56,19 +56,23 @@ The game uses a local server plus the DeepRL backend for persistence.
 ### Windows (batch)
 
 ```
-start-dev.bat
-```
 
 Install Game Backend dependencies once:
 
 ```
 python -m pip install -r scripts/game-backend-requirements.txt
+python -m pip install -r DeepRL/ai-backend/requirements.txt
+python -m pip install -r DeepRL/backend/requirements.txt
 ```
-
+start-dev.bat
 This starts:
 - RL Backend: `http://127.0.0.1:5050`
 - Game Backend: `http://127.0.0.1:5051`
 - Game: `http://127.0.0.1:5173`
+
+The startup scripts also:
+- set `config/deploy.profile.json` to `{"profile":"local"}`
+- generate `js/runtime-config.js` from the active deploy config
 
 ## Runtime Architecture
 
@@ -137,14 +141,39 @@ end
 - RL Backend should remain DB/API only and must not open AI role sockets to GBE.
 - If AI socket is not connected, GBE marks AI connection error in debug and continues session loop without AI actions.
 
-### Game Backend Environment Variables
+### Deployment Config Files (Source of Truth)
 
-- `GAME_BACKEND_PORT` (default `5051`)
-- `AI_SERVICE_URL` (default `http://127.0.0.1:6060`)
-- `RL_DB_URL` (default `http://127.0.0.1:5050`)
-- `RL_MODEL_BASE_KEY` (default `tank-ai-dqn`)
-- `MAX_AI_TANKS` (default `4`)
-- `AI_TANK_LABELS` (default `normal_en`)
+- `config/deploy.profile.json` chooses active profile:
+  - `{"profile":"local"}`
+  - `{"profile":"render"}`
+- `config/deploy.local.json` contains local URLs/host/port/path values.
+- `config/deploy.render.json` contains Render URLs/host/port/path values.
+- URL/path settings are loaded from config files by:
+  - `scripts/game-backend.py`
+  - `DeepRL/ai-backend/server.py`
+  - `DeepRL/backend/server.py`
+- Frontend endpoint settings are generated into `js/runtime-config.js` by:
+  - `python scripts/generate_runtime_config.py`
+
+### Health Endpoints
+
+- Game Backend: `GET /healthz`
+- RL Backend: `GET /healthz`
+
+## Render Deployment (Code Already Implemented)
+
+1. Set Render profile values in `config/deploy.render.json`.
+2. Create services from `render.yaml` using **New + Blueprint**.
+3. Attach RL persistent disk at `/var/data`.
+4. Deploy all services.
+5. Verify health:
+   - `https://<gbe-public-url>/healthz`
+   - RL `/healthz` via temporary public exposure or internal log verification.
+6. Verify gameplay:
+   - Create/join session in public client URL.
+   - Confirm AI joins and returns actions.
+7. Verify persistence:
+   - Restart RL service and confirm model DB persists at `/var/data/rl-models.db`.
 
 ## Technical Details
 

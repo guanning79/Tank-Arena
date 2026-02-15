@@ -316,8 +316,13 @@ class Game {
         this.lastNetLogTick = 0;
 
         const config = window.GAME_CONFIG || {};
-        const backendUrl = config.backendUrl || 'http://127.0.0.1:5051';
-        const wsUrl = config.backendWsUrl || 'ws://127.0.0.1:5051/ws';
+        const backendUrl = config.backendUrl;
+        const wsUrl = config.backendWsUrl;
+        if (!backendUrl || !wsUrl) {
+            window.alert('Missing backend runtime config. Check js/runtime-config.js and deploy profile settings.');
+            this.state = 'menu';
+            return;
+        }
         this.networkClient = new NetworkClient({
             backendUrl,
             wsUrl,

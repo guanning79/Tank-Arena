@@ -1,6 +1,14 @@
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $backendDir = Join-Path $root "DeepRL\backend"
 
+Write-Host "Setting deploy profile to local..." -ForegroundColor Cyan
+python (Join-Path $root "scripts\set_deploy_profile.py") local
+if ($LASTEXITCODE -ne 0) { throw "Failed to set deploy profile." }
+
+Write-Host "Generating runtime config..." -ForegroundColor Cyan
+python (Join-Path $root "scripts\generate_runtime_config.py")
+if ($LASTEXITCODE -ne 0) { throw "Failed to generate runtime config." }
+
 Write-Host "Starting DeepRL backend..." -ForegroundColor Cyan
 Start-Process -FilePath "python" -ArgumentList "server.py" -WorkingDirectory $backendDir
 
