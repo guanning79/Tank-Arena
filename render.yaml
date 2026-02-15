@@ -1,5 +1,5 @@
 services:
-  - type: static
+  - type: static_site
     name: tank-arena-client
     buildCommand: python scripts/set_deploy_profile.py render && python scripts/generate_runtime_config.py
     staticPublishPath: .
