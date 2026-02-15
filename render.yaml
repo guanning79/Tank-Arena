@@ -1,19 +1,20 @@
 services:
-  - type: static_site
+  - type: web
     name: tank-arena-client
+    env: static
     buildCommand: python scripts/set_deploy_profile.py render && python scripts/generate_runtime_config.py
     staticPublishPath: .
 
   - type: web
     name: tank-arena-gbe
-    runtime: python
+    env: python
     buildCommand: pip install -r scripts/game-backend-requirements.txt
     startCommand: python scripts/set_deploy_profile.py render && python scripts/game-backend.py
     healthCheckPath: /healthz
 
   - type: pserv
     name: tank-arena-rl
-    runtime: python
+    env: python
     plan: starter
     buildCommand: pip install -r DeepRL/backend/requirements.txt
     startCommand: python scripts/set_deploy_profile.py render && python DeepRL/backend/server.py
@@ -25,6 +26,6 @@ services:
 
   - type: worker
     name: tank-arena-ai
-    runtime: python
+    env: python
     buildCommand: pip install -r DeepRL/ai-backend/requirements.txt
     startCommand: python scripts/set_deploy_profile.py render && python DeepRL/ai-backend/server.py
