@@ -43,7 +43,30 @@ sessions = {}
 MAX_PLAYER_RESPAWNS = 1
 ENEMY_SPAWN_INTERVAL_TICKS = int(os.getenv("ENEMY_SPAWN_INTERVAL_TICKS", "90"))
 MAX_ENEMIES_ALIVE = int(os.getenv("MAX_ENEMIES_ALIVE", "4"))
-AI_TANK_LABELS = [s.strip() for s in os.getenv("AI_TANK_LABELS", "normal_en").split(",") if s.strip()]
+
+
+def load_ai_tank_labels():
+    tank_path = ROOT_DIR / "tanks" / "tanks.json"
+    if not tank_path.exists():
+        return ["normal_en"]
+    try:
+        data = json.loads(tank_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ["normal_en"]
+    labels = []
+    if isinstance(data, list):
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            label = item.get("tank_label")
+            if isinstance(label, str):
+                label = label.strip()
+                if label.endswith("_en"):
+                    labels.append(label)
+    return labels or ["normal_en"]
+
+
+AI_TANK_LABELS = load_ai_tank_labels()
 AI_AIM_THRESHOLD_PX = int(os.getenv("AI_AIM_THRESHOLD_PX", "8"))
 RL_MODEL_BASE_KEY = os.getenv("RL_MODEL_BASE_KEY", "tank-ai-dqn")
 RL_REWARD_DEFAULTS = {
@@ -2057,7 +2080,8 @@ async def tick_session(session):
     broadcast_ms = (time.perf_counter() - broadcast_start) * 1000
     ai_send_start = time.perf_counter()
     transition_interval = max(1, int(session.get("transitionInterval", 1)))
-    should_send_transition = bool(session["aiSockets"]) and (
+    has_ai_sockets = bool(session["aiSockets"])
+    should_send_transition = has_ai_sockets and (
         transition_interval <= 1
         or (session["tick"] % transition_interval == 0)
         or session.get("gameOver")
@@ -2118,10 +2142,11 @@ async def tick_session(session):
         metrics = session.get("aiTrainDebug", {})
         metrics["sentObserve"] = False
         session["aiTrainDebug"] = metrics
-        if not session.get("aiBackendDisconnectedLogged"):
-            set_ai_error(session, "ai_backend_connection", "AI Backend is not connected")
-            session["aiBackendDisconnectedLogged"] = True
-            log_ai_connection(session, "ai_backend_disconnected", {"tick": session["tick"]})
+        if not has_ai_sockets:
+            if not session.get("aiBackendDisconnectedLogged"):
+                set_ai_error(session, "ai_backend_connection", "AI Backend is not connected")
+                session["aiBackendDisconnectedLogged"] = True
+                log_ai_connection(session, "ai_backend_disconnected", {"tick": session["tick"]})
         ai_send_await_ms = 0.0
     ai_send_ms = (time.perf_counter() - ai_send_start) * 1000
     tick_ms = (time.perf_counter() - tick_start) * 1000
