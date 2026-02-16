@@ -18,6 +18,7 @@ class Game {
         this.debugFps = document.getElementById('debug-fps');
         this.playerTilePos = document.getElementById('player-tile-pos');
         this.spawnDebugLog = document.getElementById('spawn-debug-log');
+        this.debugPerformanceEl = document.getElementById('debug-performance');
         this.aiDebugPanel = document.getElementById('ai-debug-panel');
         this.gbeDebugPanel = document.getElementById('gbe-debug-panel');
         this.gbeDebugLog = document.getElementById('gbe-debug-log');
@@ -112,6 +113,11 @@ class Game {
         this.enemies = [];
         this.mapData = null;
         this.mapLoadError = null;
+        this.mapBaseCanvas = null;
+        this.mapGrassCanvas = null;
+        this.isMobile = typeof window !== 'undefined' && (window.innerWidth <= 768 || !!('ontouchstart' in window));
+        this.lastMobileUpdateMs = 0;
+        this.perfTimings = { inputMs: 0, networkMs: 0, updateMs: 0, renderMs: 0, rebuildFullMap: false };
         
         // Shooting
         this.shootCooldownTicks = 0;
@@ -371,6 +377,8 @@ class Game {
             this.currentSessionId = payload.sessionId || this.networkClient.sessionId || null;
             if (payload.map) {
                 this.mapData = new MapData(payload.map);
+                this.mapBaseCanvas = null;
+                this.mapGrassCanvas = null;
                 this.mapPixelSize = this.mapData.mapSize;
                 this.canvas.width = this.mapData.mapSize;
                 this.canvas.height = this.mapData.mapSize;
@@ -454,6 +462,8 @@ class Game {
         
         try {
             this.mapData = await loadMap(mapPath);
+            this.mapBaseCanvas = null;
+            this.mapGrassCanvas = null;
             this.mapLoadError = null;
             if (this.mapData && this.mapData.mapSize) {
                 this.mapPixelSize = this.mapData.mapSize;
@@ -473,6 +483,8 @@ class Game {
             this.applyScale();
         } catch (error) {
             this.mapData = null;
+            this.mapBaseCanvas = null;
+            this.mapGrassCanvas = null;
             this.mapLoadError = error;
             console.error('Failed to load initial map:', error);
         }
@@ -1246,6 +1258,16 @@ class Game {
         if (deltaMs > 100) deltaMs = 100;
         this.lastTimeMs = currentMs;
         
+        // On mobile: only run update + render when at least 33ms since last update (cap at 30 FPS)
+        if (this.isMobile && (currentMs - this.lastMobileUpdateMs) < 33) {
+            this.updateTouchJoystickKnob();
+            this.updateClientFps(currentMs);
+            return;
+        }
+        if (this.isMobile) {
+            this.lastMobileUpdateMs = currentMs;
+        }
+        
         // Fixed timestep update
         this.accumulatorMs += deltaMs;
         let didUpdate = false;
@@ -1257,11 +1279,23 @@ class Game {
         
         // Render only when a fixed update occurred
         if (didUpdate) {
-            this.render();
+            if (this.showDebugBounds) {
+                this.perfTimings.rebuildFullMap = false;
+                const t0 = performance.now();
+                this.render();
+                this.perfTimings.renderMs = performance.now() - t0;
+            } else {
+                this.render();
+            }
         }
 
         this.updateTouchJoystickKnob();
         this.updateClientFps(currentMs);
+        if (this.showDebugBounds && this.debugPerformanceEl) {
+            const p = this.perfTimings;
+            this.debugPerformanceEl.textContent =
+                `input: ${p.inputMs.toFixed(2)}ms | network: ${p.networkMs.toFixed(2)}ms | update: ${p.updateMs.toFixed(2)}ms | render: ${p.renderMs.toFixed(2)}ms | rebuildFullMap: ${p.rebuildFullMap}`;
+        }
     }
 
     updateClientFps(currentMs) {
@@ -1287,6 +1321,7 @@ class Game {
             return;
         }
         if (this.state !== 'playing') return;
+        const inputT0 = this.showDebugBounds ? performance.now() : 0;
         if (this.fx) {
             this.fx.updateGlobal();
         }
@@ -1303,11 +1338,18 @@ class Game {
             ));
             const fire = controlEvents.includes('fire');
             this.networkClient.sendInput(moveEvent || null, fire);
+            if (this.showDebugBounds) {
+                this.perfTimings.inputMs = performance.now() - inputT0;
+            }
             if (this.fx) {
                 this.networkTanks.forEach((tank) => tank.updateFx(this.fx));
             }
             return;
         }
+        if (this.showDebugBounds) {
+            this.perfTimings.inputMs = performance.now() - inputT0;
+        }
+        const updateT0 = this.showDebugBounds ? performance.now() : 0;
         
         // Update player
         if (this.player && this.player.isAlive()) {
@@ -1343,6 +1385,9 @@ class Game {
         } else {
             // Player died
             if (!this.tryRespawnPlayer()) {
+                if (this.showDebugBounds && updateT0) {
+                    this.perfTimings.updateMs = performance.now() - updateT0;
+                }
                 this.beginGameOver();
                 return;
             }
@@ -1358,6 +1403,9 @@ class Game {
         if (this.playerHQ && this.mapData) {
             const hqTile = this.mapData.getTile(this.playerHQ.row, this.playerHQ.col);
             if (hqTile !== TILE_TYPES.PLAYER_HQ) {
+                if (this.showDebugBounds && updateT0) {
+                    this.perfTimings.updateMs = performance.now() - updateT0;
+                }
                 this.beginGameOver();
                 return;
             }
@@ -1487,6 +1535,9 @@ class Game {
         this.enemies = this.enemies.filter(enemy => enemy.isAlive());
 
         // FX updates handled by FxManager
+        if (this.showDebugBounds && updateT0) {
+            this.perfTimings.updateMs = performance.now() - updateT0;
+        }
     }
 
     beginGameOver() {
@@ -1794,6 +1845,7 @@ class Game {
     }
 
     applyNetworkState(state, isDelta = false) {
+        const networkT0 = this.showDebugBounds ? performance.now() : 0;
         const resolvedState = isDelta ? this.mergeNetworkDelta(state) : state;
         this.networkState = resolvedState;
         this.backendAIDebug = this.decodeAIDebugPayload(resolvedState.aiDebug, 'ai');
@@ -1849,6 +1901,8 @@ class Game {
         }
         if (resolvedState.mapTiles && this.mapData) {
             this.mapData.tiles = resolvedState.mapTiles;
+            this.mapBaseCanvas = null;
+            this.mapGrassCanvas = null;
         }
         if (Array.isArray(resolvedState.mapTilesChanged) && this.mapData && Array.isArray(this.mapData.tiles)) {
             resolvedState.mapTilesChanged.forEach((change) => {
@@ -1859,6 +1913,9 @@ class Game {
                     this.mapData.tiles[row][col] = tileId;
                 }
             });
+            if (resolvedState.mapTilesChanged.length > 0 && this.mapBaseCanvas && this.mapGrassCanvas) {
+                this.patchMapCaches(resolvedState.mapTilesChanged);
+            }
         }
         if (resolvedState.stats) {
             const nextTick = typeof resolvedState.stats.ticks === 'number' ? resolvedState.stats.ticks : null;
@@ -1981,6 +2038,9 @@ class Game {
             }
             this.lastNetLogTick = resolvedState.tick;
         }
+        if (this.showDebugBounds && networkT0) {
+            this.perfTimings.networkMs = performance.now() - networkT0;
+        }
     }
 
     logHit(targetLabel, target) {
@@ -2054,64 +2114,52 @@ class Game {
     }
     
     render() {
-        // Clear canvas
         this.ctx.fillStyle = '#1a1a2e';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Draw map and grid background
-        this.drawMap();
-        if (this.showDebugBounds) {
+        this.buildMapCaches();
+        if (this.mapBaseCanvas) {
+            this.ctx.drawImage(this.mapBaseCanvas, 0, 0);
+        }
+        if (this.showDebugBounds && !this.isMobile) {
             this.drawGrid();
         }
-        
         if (this.state === 'playing') {
-            // Draw player
             if (this.player && this.player.isAlive()) {
                 this.player.draw(this.ctx);
             }
-            this.drawPlayerCollisionBox();
-            this.drawEnemyCollisionBoxes();
-            this.updatePlayerTilePos();
-            this.drawInitialPlayerSpawnRect();
-            
-            // Draw bullets
-            this.bullets.forEach(bullet => bullet.draw(this.ctx));
-            
-            // Draw enemies
-            this.enemies.forEach(enemy => enemy.draw(this.ctx));
-
-            if (this.fx) {
-                if (this.player) {
-                    this.player.drawFx(this.fx);
-                }
-                this.enemies.forEach(enemy => enemy.drawFx(this.fx));
+            if (this.showDebugBounds && !this.isMobile) {
+                this.drawPlayerCollisionBox();
+                this.drawEnemyCollisionBoxes();
+                this.updatePlayerTilePos();
+                this.drawInitialPlayerSpawnRect();
             }
+            this.bullets.forEach(bullet => bullet.draw(this.ctx));
+            this.enemies.forEach(enemy => enemy.draw(this.ctx));
         }
-        this.drawGrassOverlay();
-        this.drawBlockingTileBounds();
-        if (this.fx) {
+        if (this.mapGrassCanvas) {
+            this.ctx.drawImage(this.mapGrassCanvas, 0, 0);
+        }
+        if (this.showDebugBounds && !this.isMobile) {
+            this.drawBlockingTileBounds();
+        }
+        if (this.state === 'playing' && this.fx) {
+            if (this.player) this.player.drawFx(this.fx);
+            this.enemies.forEach(enemy => enemy.drawFx(this.fx));
+            this.fx.drawGlobal();
+        } else if (this.fx) {
             this.fx.drawGlobal();
         }
     }
     
     drawMap() {
         if (!this.mapData) return;
-        
         const { tiles, tileSize } = this.mapData;
-        
         for (let row = 0; row < tiles.length; row++) {
             for (let col = 0; col < tiles[row].length; col++) {
                 const tileId = tiles[row][col];
                 const props = TILE_PROPERTIES[tileId];
                 if (!props || props.invisible) continue;
-                
-                const tileImage = this.tileImages[tileId];
-                if (tileImage) {
-                    this.ctx.drawImage(tileImage, col * tileSize, row * tileSize, tileSize, tileSize);
-                } else {
-                    this.ctx.fillStyle = props.color || '#000';
-                    this.ctx.fillRect(col * tileSize, row * tileSize, tileSize, tileSize);
-                }
+                this.drawOneTile(null, row, col, tileId, props, tileSize);
             }
         }
     }
@@ -2124,13 +2172,86 @@ class Game {
                 const tileId = tiles[row][col];
                 const props = TILE_PROPERTIES[tileId];
                 if (!props || !props.invisible) continue;
-                const tileImage = this.tileImages[tileId];
-                if (tileImage) {
-                    this.ctx.drawImage(tileImage, col * tileSize, row * tileSize, tileSize, tileSize);
-                } else {
-                    this.ctx.fillStyle = props.color || '#000';
-                    this.ctx.fillRect(col * tileSize, row * tileSize, tileSize, tileSize);
-                }
+                this.drawOneTile(null, row, col, tileId, props, tileSize);
+            }
+        }
+    }
+
+    drawOneTile(ctx, row, col, tileId, props, tileSize) {
+        const target = ctx || this.ctx;
+        const x = col * tileSize;
+        const y = row * tileSize;
+        const img = this.tileImages[tileId];
+        if (img) {
+            target.drawImage(img, x, y, tileSize, tileSize);
+        } else {
+            target.fillStyle = props.color || '#000';
+            target.fillRect(x, y, tileSize, tileSize);
+        }
+    }
+
+    buildMapCaches() {
+        if (!this.mapData || !this.mapData.tiles) return;
+        const { tiles, tileSize } = this.mapData;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        if (this.mapBaseCanvas && this.mapGrassCanvas) return;
+        if (this.showDebugBounds) {
+            this.perfTimings.rebuildFullMap = true;
+        }
+        this.mapBaseCanvas = document.createElement('canvas');
+        this.mapBaseCanvas.width = w;
+        this.mapBaseCanvas.height = h;
+        const baseCtx = this.mapBaseCanvas.getContext('2d');
+        baseCtx.fillStyle = '#1a1a2e';
+        baseCtx.fillRect(0, 0, w, h);
+        for (let row = 0; row < tiles.length; row++) {
+            for (let col = 0; col < tiles[row].length; col++) {
+                const tileId = tiles[row][col];
+                const props = TILE_PROPERTIES[tileId];
+                if (!props || props.invisible) continue;
+                this.drawOneTile(baseCtx, row, col, tileId, props, tileSize);
+            }
+        }
+        this.mapGrassCanvas = document.createElement('canvas');
+        this.mapGrassCanvas.width = w;
+        this.mapGrassCanvas.height = h;
+        const grassCtx = this.mapGrassCanvas.getContext('2d');
+        for (let row = 0; row < tiles.length; row++) {
+            for (let col = 0; col < tiles[row].length; col++) {
+                const tileId = tiles[row][col];
+                const props = TILE_PROPERTIES[tileId];
+                if (!props || !props.invisible) continue;
+                this.drawOneTile(grassCtx, row, col, tileId, props, tileSize);
+            }
+        }
+    }
+
+    patchMapCaches(changes) {
+        if (!this.mapBaseCanvas || !this.mapGrassCanvas || !this.mapData || !Array.isArray(changes) || changes.length === 0) return;
+        if (this.showDebugBounds) {
+            this.perfTimings.rebuildFullMap = false;
+        }
+        const { tileSize } = this.mapData;
+        const baseCtx = this.mapBaseCanvas.getContext('2d');
+        const grassCtx = this.mapGrassCanvas.getContext('2d');
+        for (let i = 0; i < changes.length; i++) {
+            const ch = changes[i];
+            const row = ch && Number.isInteger(ch.row) ? ch.row : -1;
+            const col = ch && Number.isInteger(ch.col) ? ch.col : -1;
+            const tileId = ch && Number.isInteger(ch.tileId) ? ch.tileId : null;
+            if (row < 0 || col < 0 || tileId === null) continue;
+            const x = col * tileSize;
+            const y = row * tileSize;
+            baseCtx.fillStyle = '#1a1a2e';
+            baseCtx.fillRect(x, y, tileSize, tileSize);
+            grassCtx.clearRect(x, y, tileSize, tileSize);
+            const props = TILE_PROPERTIES[tileId];
+            if (!props) continue;
+            if (props.invisible) {
+                this.drawOneTile(grassCtx, row, col, tileId, props, tileSize);
+            } else {
+                this.drawOneTile(baseCtx, row, col, tileId, props, tileSize);
             }
         }
     }
