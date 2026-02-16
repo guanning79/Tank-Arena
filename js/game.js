@@ -117,7 +117,7 @@ class Game {
         this.mapGrassCanvas = null;
         this.isMobile = typeof window !== 'undefined' && (window.innerWidth <= 768 || !!('ontouchstart' in window));
         this.lastMobileUpdateMs = 0;
-        this.perfTimings = { inputMs: 0, networkMs: 0, updateMs: 0, renderMs: 0, rebuildFullMap: false };
+        this.perfTimings = { inputMs: 0, networkMs: 0, updateMs: 0, fxUpdateMs: 0, renderMs: 0, rebuildFullMap: false };
         
         // Shooting
         this.shootCooldownTicks = 0;
@@ -1279,6 +1279,15 @@ class Game {
         
         // Render only when a fixed update occurred
         if (didUpdate) {
+            if (this.fx) {
+                if (this.showDebugBounds) {
+                    const fxT0 = performance.now();
+                    this.fx.updateGlobal();
+                    this.perfTimings.fxUpdateMs = performance.now() - fxT0;
+                } else {
+                    this.fx.updateGlobal();
+                }
+            }
             if (this.showDebugBounds) {
                 this.perfTimings.rebuildFullMap = false;
                 const t0 = performance.now();
@@ -1294,7 +1303,7 @@ class Game {
         if (this.showDebugBounds && this.debugPerformanceEl) {
             const p = this.perfTimings;
             this.debugPerformanceEl.textContent =
-                `input: ${p.inputMs.toFixed(2)}ms | network: ${p.networkMs.toFixed(2)}ms | update: ${p.updateMs.toFixed(2)}ms | render: ${p.renderMs.toFixed(2)}ms | rebuildFullMap: ${p.rebuildFullMap}`;
+                `input: ${p.inputMs.toFixed(2)}ms | network: ${p.networkMs.toFixed(2)}ms | update: ${p.updateMs.toFixed(2)}ms | fxUpdate: ${p.fxUpdateMs.toFixed(2)}ms | render: ${p.renderMs.toFixed(2)}ms | rebuildFullMap: ${p.rebuildFullMap}`;
         }
     }
 
@@ -1321,12 +1330,9 @@ class Game {
             return;
         }
         if (this.state !== 'playing') return;
-        const inputT0 = this.showDebugBounds ? performance.now() : 0;
-        if (this.fx) {
-            this.fx.updateGlobal();
-        }
         this.gameTicks += 1;
         
+        const inputT0 = this.showDebugBounds ? performance.now() : 0;
         const bounds = this.getMapBounds();
         const controlEvents = this.input.getControlEvents();
         if (this.networkMode && this.networkClient) {
