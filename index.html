@@ -9,6 +9,12 @@
 <body>
     <div id="main-layout">
         <div id="game-container">
+            <div id="touch-hud" class="touch-hud" aria-hidden="true">
+                <div id="touch-joystick-base" class="touch-joystick-base">
+                    <div id="touch-joystick-knob" class="touch-joystick-knob"></div>
+                </div>
+                <button id="touch-fire-button" type="button" class="touch-fire-button">FIRE</button>
+            </div>
             <div id="title-bar">
                 <div id="score">Score: 0</div>
                 <div id="health">Health: 100</div>
@@ -21,12 +27,14 @@
                 <button id="debug-ai-toggle" type="button">DebugAI: Off</button>
                 <button id="auto-restart-toggle" type="button">Auto Play Again: Off</button>
                 <button id="debug-gbe-toggle" type="button">DebugGBE: Off</button>
+                <button id="fullscreen-toggle" type="button">Fullscreen</button>
             </div>
             <canvas id="gameCanvas"></canvas>
             <div id="start-screen">
                 <h1>Tank Arena</h1>
                 <p>Use WASD or Arrow Keys to move</p>
                 <p>Use Mouse to aim and shoot</p>
+                <p class="mobile-hint">On mobile: use the left stick to move and the FIRE button to shoot.</p>
                 <div class="session-controls">
                     <button id="start-button">Create Session</button>
                     <div class="join-session">

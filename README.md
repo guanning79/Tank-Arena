@@ -22,6 +22,17 @@ An HTML5 tank arena game built with vanilla JavaScript. Control your tank, shoot
 6. **Left Click** to shoot
 7. Survive as long as possible and defeat enemies!
 
+## Mobile (iOS / Android)
+
+On phones and tablets the game supports:
+
+- **Responsive layout** in portrait and landscape with safe-area insets (notch/home indicator).
+- **Fullscreen**: Use the **Fullscreen** button in the title bar. On iOS, true fullscreen may be unavailable; a fullscreen-like layout (maximized area, scroll locked) is used instead.
+- **Touch controls**: A **left virtual joystick** (move) and **right FIRE button** (shoot). The joystick and fire button are shown only on small viewports (e.g. width ≤768px) and are hidden on desktop so keyboard and mouse are unchanged.
+- **Aiming**: On mobile, aiming is fixed forward (no separate aim stick); movement direction and fire use the same controls as desktop logic.
+
+**Limitations**: Touch controls are additive; desktop layout and keyboard/mouse behavior are unchanged on large screens. For best results use a recent browser (e.g. Safari on iOS, Chrome on Android). Validate create/join session and movement/fire on your device.
+
 ## Game Mechanics
 
 - **Movement**: Tank moves in 8 directions based on input

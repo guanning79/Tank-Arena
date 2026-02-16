@@ -10,6 +10,7 @@ class Game {
         this.container = document.getElementById('game-container');
         this.titleBar = document.getElementById('title-bar');
         this.scaleToggle = document.getElementById('scale-toggle');
+        this.fullscreenToggle = document.getElementById('fullscreen-toggle');
         this.debugToggle = document.getElementById('debug-toggle');
         this.sessionIdLabel = document.getElementById('session-id-label');
         this.copySessionIdButton = document.getElementById('copy-session-id-button');
@@ -175,6 +176,17 @@ class Game {
         if (this.scaleToggle) {
             this.scaleToggle.addEventListener('click', () => this.toggleScale());
         }
+        if (this.fullscreenToggle) {
+            this.fullscreenToggle.addEventListener('click', () => this.toggleFullscreen());
+        }
+        const fullscreenChange = () => {
+            this.updateFullscreenButtonLabel();
+            if (!this.isFullscreen()) this.applyScale();
+        };
+        document.addEventListener('fullscreenchange', fullscreenChange);
+        document.addEventListener('webkitfullscreenchange', fullscreenChange);
+        document.addEventListener('mozfullscreenchange', fullscreenChange);
+        document.addEventListener('MSFullscreenChange', fullscreenChange);
         if (this.debugToggle) {
             this.debugToggle.addEventListener('click', () => this.toggleDebugBounds());
         }
@@ -236,6 +248,7 @@ class Game {
         if (debugGbeToggle) {
             debugGbeToggle.textContent = 'DebugGBE: Off';
         }
+        this.updateFullscreenButtonLabel();
         this.applyScale();
     }
     
@@ -846,6 +859,71 @@ class Game {
         this.applyScale();
     }
 
+    isFullscreen() {
+        return !!(
+            document.fullscreenElement ||
+            document.webkitFullscreenElement ||
+            document.mozFullScreenElement ||
+            document.msFullscreenElement
+        );
+    }
+
+    isFullscreenFallback() {
+        return document.body.classList.contains('fullscreen-fallback');
+    }
+
+    async toggleFullscreen() {
+        if (this.isFullscreen()) {
+            await this.exitFullscreen();
+            return;
+        }
+        if (this.isFullscreenFallback()) {
+            this.exitFullscreenFallback();
+            return;
+        }
+        const doc = document.documentElement;
+        const req = doc.requestFullscreen || doc.webkitRequestFullscreen || doc.mozRequestFullScreen || doc.msRequestFullscreen;
+        if (typeof req === 'function') {
+            try {
+                await req.call(doc);
+            } catch {
+                this.enterFullscreenFallback();
+            }
+        } else {
+            this.enterFullscreenFallback();
+        }
+    }
+
+    async exitFullscreen() {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+        if (typeof exit === 'function') {
+            try {
+                await exit.call(document);
+            } catch {}
+        }
+    }
+
+    enterFullscreenFallback() {
+        document.body.classList.add('fullscreen-fallback');
+        this.updateFullscreenButtonLabel();
+        this.applyScale();
+    }
+
+    exitFullscreenFallback() {
+        document.body.classList.remove('fullscreen-fallback');
+        this.updateFullscreenButtonLabel();
+        this.applyScale();
+    }
+
+    updateFullscreenButtonLabel() {
+        if (!this.fullscreenToggle) return;
+        if (this.isFullscreen() || this.isFullscreenFallback()) {
+            this.fullscreenToggle.textContent = 'Exit Fullscreen';
+        } else {
+            this.fullscreenToggle.textContent = 'Fullscreen';
+        }
+    }
+
     toggleDebugBounds() {
         this.showDebugBounds = !this.showDebugBounds;
         if (this.debugToggle) {
@@ -1129,6 +1207,29 @@ class Game {
         this.container.style.height = `${scaledSize + titleBarHeight}px`;
         this.canvas.style.width = `${scaledSize}px`;
         this.canvas.style.height = `${scaledSize}px`;
+        this.syncTouchHudPosition(titleBarHeight, scaledSize);
+    }
+
+    syncTouchHudPosition(titleBarHeight, canvasHeight) {
+        const base = document.getElementById('touch-joystick-base');
+        const fireBtn = document.getElementById('touch-fire-button');
+        if (!base || !fireBtn) return;
+        const inset = 48;
+        base.style.left = `${inset}px`;
+        base.style.bottom = `${inset}px`;
+        base.style.top = 'auto';
+        fireBtn.style.right = `${inset}px`;
+        fireBtn.style.bottom = `${inset}px`;
+        fireBtn.style.top = 'auto';
+    }
+
+    updateTouchJoystickKnob() {
+        const knob = document.getElementById('touch-joystick-knob');
+        if (!knob || !this.input || !this.input.stick) return;
+        const maxOffset = 28;
+        const dx = this.input.stick.dx * maxOffset;
+        const dy = this.input.stick.dy * maxOffset;
+        knob.style.transform = `translate(${dx}px, ${dy}px)`;
     }
     
     gameLoop(currentTime) {
@@ -1159,6 +1260,7 @@ class Game {
             this.render();
         }
 
+        this.updateTouchJoystickKnob();
         this.updateClientFps(currentMs);
     }
 
