@@ -21,6 +21,7 @@ class Game {
         this.gbeDebugPanel = document.getElementById('gbe-debug-panel');
         this.gbeDebugLog = document.getElementById('gbe-debug-log');
         this.gbeDebugMeta = document.getElementById('gbe-debug-meta');
+        this.gbeDebugPerformance = document.getElementById('gbe-debug-performance');
         this.gbePlayerIds = document.getElementById('gbe-player-ids');
         this.gbeAiIds = document.getElementById('gbe-ai-ids');
         this.aiDebugState = document.getElementById('ai-debug-state');
@@ -897,9 +898,17 @@ class Game {
             if (this.gbeDebugMeta) {
                 this.gbeDebugMeta.textContent = 'GBE src: -- | Sessions: -- | AI inputs recv/applied: --/-- | sockets ai/client: --/-- | errCount: -- | Backend FPS: --';
             }
+            if (this.gbeDebugPerformance) {
+                this.gbeDebugPerformance.textContent = 'Performance: --';
+            }
             if (this.gbePlayerIds) this.gbePlayerIds.textContent = '--';
             if (this.gbeAiIds) this.gbeAiIds.textContent = '--';
         }
+    }
+
+    formatPerfMs(value) {
+        if (typeof value !== 'number' || Number.isNaN(value)) return '--';
+        return value.toFixed(2);
     }
 
     updatePlayerTilePos() {
@@ -1043,11 +1052,12 @@ class Game {
             if (this.aiDebugMoveLog) {
                 const episodeLog = info.episodeLog;
                 const episodeTick = info.episodeLogTick;
-                if (episodeLog && this.aiEpisodeLogs.length < 20) {
+                if (episodeLog) {
                     const last = this.aiEpisodeLogs[this.aiEpisodeLogs.length - 1];
                     const entry = `tick ${episodeTick ?? '--'} - ${episodeLog}`;
                     if (entry !== last) {
                         this.aiEpisodeLogs.push(entry);
+                        this.aiEpisodeLogs = this.aiEpisodeLogs.slice(-10);
                     }
                 }
                 const tick = typeof info.steps === 'number' ? info.steps : '--';
@@ -1632,18 +1642,6 @@ class Game {
         this.gbeDebugLog.scrollTop = this.gbeDebugLog.scrollHeight;
     }
 
-    formatGBEDeltaSummary(delta) {
-        if (!delta || !Array.isArray(delta.events) || delta.events.length === 0) {
-            return null;
-        }
-        const eventText = delta.events.map((event) => {
-            const name = event && (event.name || event.type) ? (event.name || event.type) : 'event';
-            const tankId = event && event.tankId ? String(event.tankId).slice(0, 6) : null;
-            return tankId ? `${name}@${tankId}` : name;
-        }).join(', ');
-        return `events=${eventText}`;
-    }
-
     decodeAIDebugPayload(packed, channel = 'ai') {
         if (!packed) return null;
         if (!Array.isArray(packed.values)) {
@@ -1722,6 +1720,20 @@ class Game {
                 ? this.backendFps
                 : '--';
             this.gbeDebugMeta.textContent = `GBE src: ${src} | Sessions: ${sessionCount} | AI inputs recv/applied: ${recvTotal}/${appliedTotal} | sockets ai/client: ${aiSockets}/${clientSockets} | errCount: ${errCount} | Backend FPS: ${backendFps}`;
+        }
+        if (this.gbeDebugPerformance) {
+            const perf = this.backendGBEDebug || {};
+            const loopWaitMs = this.formatPerfMs(perf.loopWaitMs);
+            const inputMs = this.formatPerfMs(perf.inputMs);
+            const bulletsMs = this.formatPerfMs(perf.bulletsMs);
+            const cooldownMs = this.formatPerfMs(perf.cooldownMs);
+            const rewardMs = this.formatPerfMs(perf.rewardMs);
+            const broadcastMs = this.formatPerfMs(perf.broadcastMs);
+            const aiSendMs = this.formatPerfMs(perf.aiSendMs);
+            this.gbeDebugPerformance.textContent =
+                `Performance:\n` +
+                `loopWaitMs=${loopWaitMs} inputMs=${inputMs} bulletsMs=${bulletsMs}\n` +
+                `cooldownMs=${cooldownMs} rewardMs=${rewardMs} broadcastMs=${broadcastMs} aiSendMs=${aiSendMs}`;
         }
         if (this.gbePlayerIds && this.gbeAiIds) {
             const players = (resolvedState.players || []).filter((entry) => String(entry.label || '').endsWith('_pl'));
@@ -1845,13 +1857,6 @@ class Game {
             this.state = 'ending';
         }
         this.updateAIDebugPanel();
-
-        if (isDelta && this.showGBEDebug && state && state.delta) {
-            const summary = this.formatGBEDeltaSummary(state);
-            if (summary) {
-                this.appendGBEDebugLine(summary, summary);
-            }
-        }
 
         if (this.showDebugBounds && resolvedState.tick && resolvedState.tick !== this.lastNetLogTick) {
             if (resolvedState.tick % 30 === 0) {

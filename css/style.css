@@ -151,6 +151,12 @@ body {
     margin-bottom: 6px;
 }
 
+#gbe-debug-performance {
+    margin-top: 0;
+    margin-bottom: 8px;
+    color: #d7e3ff;
+}
+
 #gbe-id-table {
     display: grid;
     grid-template-columns: 1fr 1fr;

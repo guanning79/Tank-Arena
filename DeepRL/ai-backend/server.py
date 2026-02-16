@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Deque
 from collections import deque
+import importlib.util
 import sys
 
 import aiohttp
@@ -22,9 +23,11 @@ import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 SCRIPTS_DIR = ROOT_DIR / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.append(str(SCRIPTS_DIR))
-from shared_config import load_deploy_config  # noqa: E402
+_shared_config_path = SCRIPTS_DIR / "shared_config.py"
+_spec = importlib.util.spec_from_file_location("shared_config", _shared_config_path)
+_shared_config = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_shared_config)  # type: ignore[union-attr]
+load_deploy_config = _shared_config.load_deploy_config
 
 DEPLOY_CONFIG = load_deploy_config(
     required_keys=[
@@ -39,8 +42,6 @@ RL_DB_URL = str(DEPLOY_CONFIG.get("RL_DB_URL") or "http://127.0.0.1:5050").rstri
 MODEL_BASE_KEY = os.getenv("RL_MODEL_BASE_KEY", "tank-ai-dqn")
 
 POLL_INTERVAL = float(os.getenv("AI_POLL_INTERVAL", "2.0"))
-SAVE_EVERY_STEPS = int(os.getenv("AI_SAVE_EVERY_STEPS", "200"))
-SAVE_EVERY_SECONDS = int(os.getenv("AI_SAVE_EVERY_SECONDS", "30"))
 LEARNING_RATE = float(os.getenv("AI_LEARNING_RATE", "0.001"))
 GAMMA = float(os.getenv("AI_GAMMA", "0.95"))
 EPSILON = float(os.getenv("AI_EPSILON_START", "0.2"))
@@ -137,6 +138,7 @@ def load_rl_config():
         "aimDotThreshold": find_number("aimDotThreshold", 0.85),
         "directionChangeCooldown": find_number("directionChangeCooldown", 6),
         "maxTileId": int(find_number("maxTileId", 7)),
+        "saveEverySteps": int(find_number("saveEverySteps", 300)),
         "aiTankLabels": find_string_array("aiTankLabels"),
         "actionMap": find_action_map(),
         "rewardWeights": find_reward_weights(),
@@ -146,6 +148,7 @@ def load_rl_config():
 RL_CONFIG = load_rl_config()
 AI_TANK_LABELS = RL_CONFIG.get("aiTankLabels") or []
 ACTION_MAP = RL_CONFIG.get("actionMap") or ACTION_MAP
+SAVE_EVERY_STEPS = int(RL_CONFIG.get("saveEverySteps", 300))
 MAX_ENEMY_SPEED = RL_CONFIG.get("maxEnemySpeed", 4)
 IDLE_TICK_THRESHOLD = RL_CONFIG.get("idleTickThreshold", 20)
 AIM_DOT_THRESHOLD = RL_CONFIG.get("aimDotThreshold", 0.85)
@@ -356,7 +359,6 @@ class SessionState:
     model: Optional[object] = None
     map_data: Optional[dict] = None
     ai_runtime: Dict[str, dict] = field(default_factory=dict)
-    last_save_time: float = field(default_factory=time.time)
     last_step: int = 0
     last_action_tick: Optional[int] = None
     transitions_received: int = 0
@@ -908,9 +910,6 @@ class AiBackend:
             if session.model.steps - session.last_step >= SAVE_EVERY_STEPS:
                 await self.save_model(session)
                 session.last_step = session.model.steps
-            if time.time() - session.last_save_time >= SAVE_EVERY_SECONDS:
-                await self.save_model(session)
-                session.last_save_time = time.time()
         else:
             train_steps_delta = 0
         game_over = bool(state.get("gameOver"))
@@ -929,6 +928,12 @@ class AiBackend:
                 f"avgReward={avg_return:.2f} timeToWin={time_to_win if time_to_win is not None else '--'}"
             )
             session.last_episode_log_tick = tick
+            if session.ws and not session.ws.closed:
+                await session.ws.send_json({
+                    "type": "episode_log",
+                    "episodeLog": session.last_episode_log,
+                    "episodeLogTick": session.last_episode_log_tick,
+                })
         if not game_over and session.last_game_over:
             if isinstance(tick, int):
                 session.episode_start_tick = tick
@@ -974,8 +979,6 @@ class AiBackend:
                 "trainStepsDelta": getattr(session, "last_train_steps", 0),
                 "tdLoss": session.last_td_loss,
                 "qMean": session.last_q_mean,
-                "episodeLog": session.last_episode_log,
-                "episodeLogTick": session.last_episode_log_tick,
                 "perfTrainMs": getattr(session, "last_train_ms", 0.0),
                 "perfInferMs": getattr(session, "last_infer_ms", 0.0),
                 "asyncSaveMs": getattr(session, "last_async_save_ms", 0.0),

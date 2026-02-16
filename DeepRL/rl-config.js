@@ -22,7 +22,7 @@ window.RL_CONFIG = {
         min: 0.1,
         decay: 0.9995
     },
-    saveEverySteps: 2000,
+    saveEverySteps: 300, // AI backend persists model every N training steps.
     saveEveryEpisodes: 3,
     maxEnemiesAlive: 4,
     idleTickThreshold: 20,

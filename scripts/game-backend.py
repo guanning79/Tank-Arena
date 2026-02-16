@@ -1672,6 +1672,13 @@ def snapshot_state(session, include_ai_debug_labels=False, include_gbe_debug_lab
         "lastError": session["lastAiError"],
         "aiSocketCount": len(session["aiSockets"]),
         "clientSocketCount": len(session["sockets"]),
+        "loopWaitMs": metrics.get("loopWaitMs"),
+        "inputMs": metrics.get("inputMs"),
+        "bulletsMs": metrics.get("bulletsMs"),
+        "cooldownMs": metrics.get("cooldownMs"),
+        "rewardMs": metrics.get("rewardMs"),
+        "broadcastMs": metrics.get("broadcastMs"),
+        "aiSendMs": metrics.get("aiSendMs"),
     }
     state = {
         "tick": session["tick"],
@@ -2430,6 +2437,13 @@ async def websocket_handler(request):
                     meta = session["wsMeta"].get(ws, {})
                     meta["debugGBE"] = bool(data.get("enabled"))
                     session["wsMeta"][ws] = meta
+                elif data.get("type") == "episode_log" and ws in session.get("aiSockets", set()):
+                    metrics = session.get("aiTrainDebug", {})
+                    if "episodeLog" in data:
+                        metrics["episodeLog"] = data["episodeLog"]
+                    if "episodeLogTick" in data:
+                        metrics["episodeLogTick"] = data["episodeLogTick"]
+                    session["aiTrainDebug"] = metrics
                 elif data.get("type") == "input":
                     meta = session["wsMeta"].get(ws, {})
                     entry = {
