@@ -1,9 +1,10 @@
 /**
  * FX Manager
  * Handles effect rendering and audio playback.
+ * Audio: load in worker, decode on main, cache AudioBuffer; play only when ready with optional start offset.
  */
 class FxManager {
-    constructor(ctx) {
+    constructor(ctx, options) {
         this.ctx = ctx;
         this.config = null;
         this.configPromise = null;
@@ -12,6 +13,59 @@ class FxManager {
         this.globalFx = [];
         this.pendingRequests = [];
         this.volume = 1;
+        this.fixedTimeStepMs = (options && typeof options.fixedTimeStepMs === 'number') ? options.fixedTimeStepMs : 33;
+        this.audioContext = null;
+        this.audioWorker = typeof Worker !== 'undefined' ? new Worker('js/audio-worker.js') : null;
+        if (this.audioWorker) {
+            this.audioWorker.onmessage = (event) => this._onAudioWorkerMessage(event.data);
+            this.audioWorker.onerror = () => {
+                console.error('Audio worker error');
+            };
+        }
+    }
+
+    _getAudioContext() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return this.audioContext;
+    }
+
+    resumeAudioContext() {
+        const context = this._getAudioContext();
+        if (context.state === 'suspended') {
+            context.resume();
+        }
+    }
+
+    _decodeAndStore(url, arrayBuffer) {
+        const cache = this.audioCache;
+        const entry = cache[url];
+        if (!entry) return;
+        const context = this._getAudioContext();
+        context.decodeAudioData(arrayBuffer)
+            .then((buffer) => {
+                if (cache[url]) {
+                    cache[url].buffer = buffer;
+                    cache[url].ready = true;
+                }
+            })
+            .catch((err) => {
+                console.error('Audio decode failed for ' + url + ': ', err);
+                delete cache[url];
+            });
+    }
+
+    _onAudioWorkerMessage(data) {
+        if (!data) return;
+        if (data.type === 'buffer' && data.url && data.arrayBuffer) {
+            this._decodeAndStore(data.url, data.arrayBuffer);
+            return;
+        }
+        if (data.type === 'error' && data.url) {
+            console.error('Audio load failed for ' + data.url + ': ' + (data.message || 'Unknown error'));
+            delete this.audioCache[data.url];
+        }
     }
 
     loadConfig() {
@@ -79,21 +133,53 @@ class FxManager {
     }
 
     ensureAudio(soundPath) {
-        if (this.audioCache[soundPath]) {
-            return this.audioCache[soundPath];
+        const base = typeof document !== 'undefined' && document.baseURI
+            ? document.baseURI
+            : (typeof window !== 'undefined' ? window.location.href : '');
+        const absoluteUrl = base ? new URL(soundPath, base).href : soundPath;
+        const cache = this.audioCache;
+        const entry = cache[absoluteUrl];
+        if (entry) {
+            return entry;
         }
-        const audio = new Audio(soundPath);
-        audio.volume = this.volume;
-        this.audioCache[soundPath] = audio;
-        return audio;
+        cache[absoluteUrl] = { ready: false };
+        if (this.audioWorker) {
+            this.audioWorker.postMessage({ type: 'load', url: absoluteUrl });
+        } else {
+            fetch(absoluteUrl, { cache: 'default' })
+                .then((response) => {
+                    if (!response.ok) throw new Error(response.statusText);
+                    return response.arrayBuffer();
+                })
+                .then((arrayBuffer) => this._decodeAndStore(absoluteUrl, arrayBuffer))
+                .catch((err) => {
+                    console.error('Audio load failed for ' + absoluteUrl + ': ', err);
+                    delete cache[absoluteUrl];
+                });
+        }
+        return cache[absoluteUrl];
     }
 
     setVolume(volume) {
         const next = typeof volume === 'number' ? volume : 1;
         this.volume = Math.max(0, Math.min(1, next));
-        Object.values(this.audioCache).forEach((audio) => {
-            audio.volume = this.volume;
-        });
+    }
+
+    playBuffer(entry, startOffsetSeconds, loop) {
+        if (!entry || !entry.ready || !entry.buffer) return null;
+        this.resumeAudioContext();
+        const context = this._getAudioContext();
+        const source = context.createBufferSource();
+        source.buffer = entry.buffer;
+        source.loop = !!loop;
+        const gain = context.createGain();
+        gain.gain.value = this.volume;
+        source.connect(gain);
+        gain.connect(context.destination);
+        const duration = entry.buffer.duration;
+        const offset = Math.max(0, Math.min(startOffsetSeconds, duration - 0.001));
+        source.start(context.currentTime, offset);
+        return loop ? source : null;
     }
 
     playFx(name, x, y) {
@@ -124,15 +210,16 @@ class FxManager {
         const image = texturePath ? this.ensureTexture(texturePath) : null;
         const soundPath = config.sound || '';
         const soundStartFrame = typeof config.soundStartFrame === 'number' ? config.soundStartFrame : 0;
-        const audio = soundPath ? this.ensureAudio(soundPath) : null;
-        return new FxInstance(name, x, y, config, image, audio, soundStartFrame);
+        const audioEntry = soundPath ? this.ensureAudio(soundPath) : null;
+        return new FxInstance(name, x, y, config, image, audioEntry, soundStartFrame, this);
     }
 
-    updateList(list) {
+    updateList(list, gameTick) {
         if (!Array.isArray(list) || !list.length) return;
+        const tick = typeof gameTick === 'number' ? gameTick : 0;
         for (let i = list.length - 1; i >= 0; i -= 1) {
             const fx = list[i];
-            fx.update();
+            fx.update(tick);
             if (fx.state === 'ended') {
                 list.splice(i, 1);
             }
@@ -144,8 +231,8 @@ class FxManager {
         list.forEach((fx) => fx.draw(this.ctx));
     }
 
-    updateGlobal() {
-        this.updateList(this.globalFx);
+    updateGlobal(gameTick) {
+        this.updateList(this.globalFx, gameTick);
     }
 
     drawGlobal() {
@@ -160,37 +247,47 @@ class FxManager {
 }
 
 class FxInstance {
-    constructor(name, x, y, config, image, audio, soundStartFrame) {
+    constructor(name, x, y, config, image, audioEntry, soundStartFrame, fxManager) {
         this.name = name;
         this.x = x;
         this.y = y;
         this.config = config;
         this.image = image;
-        this.audio = audio;
+        this.audioEntry = audioEntry;
         this.soundStartFrame = soundStartFrame;
+        this.fxManager = fxManager;
         this.soundPlayed = false;
+        this.requestedPlayAtGameTick = null;
+        this.playingSourceNode = null;
         this.frameIndex = 0;
         this.state = 'start';
         this.loop = !!config.loop;
     }
 
-    update() {
+    update(gameTick) {
         if (this.state === 'ended') return;
         if (this.state === 'start') {
             this.state = 'playing';
         }
-        if (!this.soundPlayed && this.audio && this.frameIndex >= this.soundStartFrame) {
-            this.soundPlayed = true;
-            try {
-                this.audio.currentTime = 0;
-                if (this.loop && !this.image) {
-                    this.audio.loop = true;
-                } else {
-                    this.audio.loop = false;
+        if (!this.soundPlayed && this.frameIndex >= this.soundStartFrame) {
+            if (!this.audioEntry) {
+                this.soundPlayed = true;
+            } else if (!this.audioEntry.ready) {
+                if (this.requestedPlayAtGameTick === null) {
+                    this.requestedPlayAtGameTick = typeof gameTick === 'number' ? gameTick : 0;
                 }
-                this.audio.play();
-            } catch (error) {
-                // Ignore audio playback errors (autoplay restrictions)
+            } else {
+                this.soundPlayed = true;
+                const ms = this.fxManager.fixedTimeStepMs || 33;
+                let offsetSec = 0;
+                if (this.requestedPlayAtGameTick !== null && typeof gameTick === 'number') {
+                    offsetSec = (gameTick - this.requestedPlayAtGameTick) * (ms / 1000);
+                }
+                this.playingSourceNode = this.fxManager.playBuffer(
+                    this.audioEntry,
+                    Math.max(0, offsetSec),
+                    this.loop && !this.image
+                );
             }
         }
         const frameCount = this.config.frameCount || 0;
@@ -256,14 +353,13 @@ class FxInstance {
     }
 
     stop() {
-        if (this.audio) {
+        if (this.playingSourceNode) {
             try {
-                this.audio.loop = false;
-                this.audio.pause();
-                this.audio.currentTime = 0;
-            } catch (error) {
-                // Ignore audio playback errors
+                this.playingSourceNode.stop();
+            } catch (e) {
+                // Already stopped or detached
             }
+            this.playingSourceNode = null;
         }
         this.state = 'ended';
     }

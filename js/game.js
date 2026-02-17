@@ -70,7 +70,7 @@ class Game {
         this.tankDefinitions = null;
         this.maxEnemyCount = 0;
         this.randomSeed = (Date.now() | 0) ^ 0x9e3779b9;
-        this.fx = new FxManager(this.ctx);
+        this.fx = new FxManager(this.ctx, { fixedTimeStepMs: this.fixedTimeStepMs });
         this.playerHQ = null;
         this.gameOverStarted = false;
         this.gameOverFxName = 'destroy_hq';
@@ -277,6 +277,7 @@ class Game {
         await this.loadTankDefinitions();
         if (this.fx) {
             await this.fx.preloadFx('move');
+            this.fx.resumeAudioContext();
         }
         
         // Create player tank
@@ -353,6 +354,7 @@ class Game {
         await this.loadTankDefinitions();
         if (this.fx) {
             await this.fx.preloadFx('move');
+            this.fx.resumeAudioContext();
         }
 
         try {
@@ -1282,10 +1284,10 @@ class Game {
             if (this.fx) {
                 if (this.showDebugBounds) {
                     const fxT0 = performance.now();
-                    this.fx.updateGlobal();
+                    this.fx.updateGlobal(this.gameTicks);
                     this.perfTimings.fxUpdateMs = performance.now() - fxT0;
                 } else {
-                    this.fx.updateGlobal();
+                    this.fx.updateGlobal(this.gameTicks);
                 }
             }
             if (this.showDebugBounds) {
@@ -1348,7 +1350,7 @@ class Game {
                 this.perfTimings.inputMs = performance.now() - inputT0;
             }
             if (this.fx) {
-                this.networkTanks.forEach((tank) => tank.updateFx(this.fx));
+                this.networkTanks.forEach((tank) => tank.updateFx(this.fx, this.gameTicks));
             }
             return;
         }
@@ -1387,7 +1389,7 @@ class Game {
                 this.shoot();
                 this.shootCooldownTicks = this.shootCooldownTicksMax;
             }
-            this.player.updateFx(this.fx);
+            this.player.updateFx(this.fx, this.gameTicks);
         } else {
             // Player died
             if (!this.tryRespawnPlayer()) {
@@ -1466,7 +1468,7 @@ class Game {
                 enemy.x = Math.max(halfEnemyW, Math.min(enemy.x, bounds.width - halfEnemyW));
                 enemy.y = Math.max(halfEnemyH, Math.min(enemy.y, bounds.height - halfEnemyH));
             }
-            enemy.updateFx(this.fx);
+            enemy.updateFx(this.fx, this.gameTicks);
         });
         
         // Collision detection: bullets vs enemies
@@ -1579,7 +1581,7 @@ class Game {
 
     updateEnding() {
         if (this.fx) {
-            this.fx.updateGlobal();
+            this.fx.updateGlobal(this.gameTicks);
             if (this.fx.hasActiveFx(this.gameOverFxName)) {
                 return;
             }

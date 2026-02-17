@@ -134,9 +134,9 @@ class Tank {
         fxManager.requestFx(name, x, y, this.fxList);
     }
 
-    updateFx(fxManager) {
+    updateFx(fxManager, gameTick) {
         if (!fxManager || typeof fxManager.updateList !== 'function') return;
-        fxManager.updateList(this.fxList);
+        fxManager.updateList(this.fxList, gameTick);
     }
 
     drawFx(fxManager) {
