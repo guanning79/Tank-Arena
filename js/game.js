@@ -1260,17 +1260,7 @@ class Game {
         if (deltaMs > 100) deltaMs = 100;
         this.lastTimeMs = currentMs;
         
-        // On mobile: only run update + render when at least 33ms since last update (cap at 30 FPS)
-        if (this.isMobile && (currentMs - this.lastMobileUpdateMs) < 33) {
-            this.updateTouchJoystickKnob();
-            this.updateClientFps(currentMs);
-            return;
-        }
-        if (this.isMobile) {
-            this.lastMobileUpdateMs = currentMs;
-        }
-        
-        // Fixed timestep update
+        // Fixed timestep update (same on mobile and PC: add time every rAF, run update when accumulator >= 33ms)
         this.accumulatorMs += deltaMs;
         let didUpdate = false;
         while (this.accumulatorMs >= this.fixedTimeStepMs) {
@@ -1301,7 +1291,7 @@ class Game {
         }
 
         this.updateTouchJoystickKnob();
-        this.updateClientFps(currentMs);
+        this.updateClientFps(currentMs, didUpdate);
         if (this.showDebugBounds && this.debugPerformanceEl) {
             const p = this.perfTimings;
             this.debugPerformanceEl.textContent =
@@ -1309,12 +1299,14 @@ class Game {
         }
     }
 
-    updateClientFps(currentMs) {
+    updateClientFps(currentMs, didUpdate) {
         if (!this.debugFps) return;
         if (!this.clientFpsLastMs) {
             this.clientFpsLastMs = currentMs;
         }
-        this.clientFpsFrames += 1;
+        if (didUpdate) {
+            this.clientFpsFrames += 1;
+        }
         const elapsed = currentMs - this.clientFpsLastMs;
         if (elapsed >= 1000) {
             this.clientFps = Math.round((this.clientFpsFrames * 1000) / elapsed);
