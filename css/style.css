@@ -42,9 +42,10 @@ body {
     z-index: 30;
 }
 
-/* Touch HUD: hidden on desktop so PC layout/controls unchanged */
+/* Touch HUD: only on mobile browser (hidden on desktop even when MobileUI is on) */
 @media (min-width: 769px) {
-    #touch-hud.touch-hud {
+    #touch-hud.touch-hud,
+    body.mobile-ui-enabled #touch-hud.touch-hud {
         display: none !important;
         pointer-events: none;
     }
@@ -281,6 +282,11 @@ body {
     font-size: 14px;
 }
 
+#mobile-ui-toggle {
+    padding: 6px 12px;
+    font-size: 14px;
+}
+
 #start-screen,
 #game-over-screen {
     position: absolute;
@@ -415,6 +421,45 @@ button:active {
         max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 80px);
     }
 
+    /* Mobile: three parts (title bar, map, controller) — stick and FIRE below map, never overlay */
+    #game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    #title-bar { order: 1; flex: 0 0 auto; }
+    #gameCanvas { order: 2; flex: 1 1 0; min-height: 0; }
+    #touch-hud {
+        order: 3;
+        flex: 0 0 auto;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        height: 100px;
+        min-height: 100px;
+        display: flex !important;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 16px;
+    }
+    #touch-hud .touch-joystick-base {
+        position: relative !important;
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+    }
+    #touch-hud .touch-fire-button {
+        position: relative !important;
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+    }
+
     #title-bar {
         flex-wrap: wrap;
         gap: 8px;
@@ -440,6 +485,66 @@ button:active {
     #start-screen p.mobile-hint {
         display: block;
     }
+}
+
+/* ========== Mobile UI mode (toggle on PC for testing) ========== */
+body.mobile-ui-enabled {
+    overflow: hidden;
+    overscroll-behavior: none;
+    align-items: flex-start;
+}
+body.mobile-ui-enabled #main-layout {
+    width: 100%;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+body.mobile-ui-enabled #game-container {
+    max-width: 100%;
+}
+body.mobile-ui-enabled #debug-ai-toggle,
+body.mobile-ui-enabled #debug-gbe-toggle,
+body.mobile-ui-enabled #auto-restart-toggle {
+    display: none !important;
+}
+/* Show touch HUD only on mobile viewport when Mobile UI is on; never overlay game area */
+@media (max-width: 768px) {
+    body.mobile-ui-enabled #touch-hud.touch-hud {
+        display: flex !important;
+        pointer-events: auto;
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+    }
+}
+
+/* Portrait (mobile only): three non-overlaid parts — title bar, map area, controller area; dock game at top */
+@media (max-width: 768px) and (orientation: portrait) {
+    body.mobile-ui-enabled #game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    body.mobile-ui-enabled #title-bar { order: 1; flex: 0 0 auto; }
+    body.mobile-ui-enabled #gameCanvas { order: 2; flex: 1 1 0; min-height: 0; }
+    body.mobile-ui-enabled #touch-hud { order: 3; flex: 0 0 auto; position: relative !important; height: 100px; min-height: 100px; display: flex !important; flex-direction: row; justify-content: space-between; align-items: center; padding: 0 16px; top: auto !important; left: auto !important; right: auto !important; bottom: auto !important; }
+    body.mobile-ui-enabled .touch-joystick-base { position: relative !important; left: auto !important; bottom: auto !important; top: auto !important; right: auto !important; }
+    body.mobile-ui-enabled .touch-fire-button { position: relative !important; right: auto !important; bottom: auto !important; top: auto !important; left: auto !important; }
+}
+
+/* Landscape (Mobile UI on): hide title bar; stick left, map centered, FIRE right; buttons outside map, map 1:1 */
+@media (orientation: landscape) {
+    body.mobile-ui-enabled #title-bar { display: none !important; }
+    body.mobile-ui-enabled #game-container { display: flex; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: nowrap; }
+    /* Show stick and FIRE in landscape (override min-width:769px hide) and place them outside map */
+    body.mobile-ui-enabled #touch-hud.touch-hud { display: contents !important; position: relative !important; top: auto !important; left: auto !important; right: auto !important; bottom: auto !important; pointer-events: auto; }
+    body.mobile-ui-enabled #touch-joystick-base { order: 1; flex-shrink: 0; position: relative !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; }
+    body.mobile-ui-enabled #gameCanvas { order: 2; flex: 0 0 auto; min-width: 0; aspect-ratio: 1 / 1; }
+    body.mobile-ui-enabled #touch-fire-button { order: 3; flex-shrink: 0; position: relative !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; }
 }
 
 /* Fullscreen fallback (e.g. iOS): maximize game area and lock scroll */

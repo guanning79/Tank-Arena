@@ -12,6 +12,10 @@ class Game {
         this.scaleToggle = document.getElementById('scale-toggle');
         this.fullscreenToggle = document.getElementById('fullscreen-toggle');
         this.debugToggle = document.getElementById('debug-toggle');
+        this.mobileUiToggle = document.getElementById('mobile-ui-toggle');
+        this.mobileUiEnabled = false;
+        this._mobileUiTouchListener = null;
+        this._mobileUiGestureListeners = null;
         this.sessionIdLabel = document.getElementById('session-id-label');
         this.copySessionIdButton = document.getElementById('copy-session-id-button');
         this.debugPanel = document.getElementById('debug-panel');
@@ -223,6 +227,60 @@ class Game {
                     }, 1200);
                 }
             });
+        }
+        if (this.mobileUiToggle) {
+            this.mobileUiToggle.addEventListener('click', () => this.toggleMobileUi());
+        }
+    }
+
+    toggleMobileUi() {
+        this.mobileUiEnabled = !this.mobileUiEnabled;
+        document.body.classList.toggle('mobile-ui-enabled', this.mobileUiEnabled);
+        if (this.mobileUiToggle) {
+            this.mobileUiToggle.textContent = this.mobileUiEnabled ? 'MobileUI: On' : 'MobileUI: Off';
+        }
+        if (this.mobileUiEnabled) {
+            this.attachMobileUiTouchListeners();
+        } else {
+            this.detachMobileUiTouchListeners();
+        }
+        this.applyScale();
+    }
+
+    attachMobileUiTouchListeners() {
+        const touchHud = document.getElementById('touch-hud');
+        const handler = (e) => {
+            if (!this.mobileUiEnabled) return;
+            if (touchHud && touchHud.contains(e.target)) return;
+            e.preventDefault();
+        };
+        this._mobileUiTouchListener = handler;
+        document.addEventListener('touchmove', handler, { passive: false });
+        const gestureHandler = (e) => {
+            if (!this.mobileUiEnabled) return;
+            if (touchHud && touchHud.contains(e.target)) return;
+            e.preventDefault();
+        };
+        this._mobileUiGestureListeners = [
+            { name: 'gesturestart', fn: gestureHandler },
+            { name: 'gesturechange', fn: gestureHandler },
+            { name: 'gestureend', fn: gestureHandler }
+        ];
+        this._mobileUiGestureListeners.forEach(({ name, fn }) => {
+            document.addEventListener(name, fn, { passive: false });
+        });
+    }
+
+    detachMobileUiTouchListeners() {
+        if (this._mobileUiTouchListener) {
+            document.removeEventListener('touchmove', this._mobileUiTouchListener);
+            this._mobileUiTouchListener = null;
+        }
+        if (this._mobileUiGestureListeners) {
+            this._mobileUiGestureListeners.forEach(({ name, fn }) => {
+                document.removeEventListener(name, fn);
+            });
+            this._mobileUiGestureListeners = null;
         }
     }
     
@@ -1208,23 +1266,49 @@ class Game {
         if (!this.container) return;
         const mapSize = this.mapPixelSize || Math.max(this.canvas.width, this.canvas.height);
         const effectiveMapSize = this.mapData && this.mapData.mapSize ? this.mapData.mapSize : mapSize;
-        const titleBarHeight = this.titleBar ? this.titleBar.offsetHeight : 0;
+        const isLandscape = window.innerWidth > window.innerHeight;
+        let titleBarHeight = this.titleBar ? this.titleBar.offsetHeight : 0;
+        if (this.mobileUiEnabled && isLandscape) {
+            titleBarHeight = 0;
+        }
+        const isMobileViewport = window.innerWidth <= 768;
+        let availableWidth = window.innerWidth;
+        let availableHeight = Math.max(0, window.innerHeight - titleBarHeight);
+        if (this.mobileUiEnabled) {
+            if (isLandscape) {
+                const leftZone = 140;
+                const rightZone = 120;
+                availableWidth = Math.max(0, window.innerWidth - leftZone - rightZone);
+            } else {
+                availableHeight = Math.max(0, window.innerHeight - titleBarHeight - 100);
+            }
+        } else if (isMobileViewport && !isLandscape) {
+            availableHeight = Math.max(0, window.innerHeight - titleBarHeight - 100);
+        }
         let scale = 1;
         if (this.autoScale) {
-            const availableHeight = Math.max(0, window.innerHeight - titleBarHeight);
-            const scaleX = window.innerWidth / effectiveMapSize;
+            const scaleX = availableWidth / effectiveMapSize;
             const scaleY = availableHeight / effectiveMapSize;
             scale = Math.min(scaleX, scaleY);
         }
         const scaledSize = effectiveMapSize * scale;
-        this.container.style.width = `${scaledSize}px`;
-        this.container.style.height = `${scaledSize + titleBarHeight}px`;
+        const portraitTouchBarH = (this.mobileUiEnabled || isMobileViewport) && !isLandscape ? 100 : 0;
+        if (this.mobileUiEnabled && isLandscape) {
+            this.container.style.width = '100%';
+            this.container.style.height = `${scaledSize}px`;
+        } else {
+            this.container.style.width = `${scaledSize}px`;
+            this.container.style.height = `${scaledSize + titleBarHeight + portraitTouchBarH}px`;
+        }
         this.canvas.style.width = `${scaledSize}px`;
         this.canvas.style.height = `${scaledSize}px`;
-        this.syncTouchHudPosition(titleBarHeight, scaledSize);
+        if (!this.mobileUiEnabled) {
+            this.syncTouchHudPosition(titleBarHeight, scaledSize);
+        }
     }
 
     syncTouchHudPosition(titleBarHeight, canvasHeight) {
+        if (this.mobileUiEnabled) return;
         const base = document.getElementById('touch-joystick-base');
         const fireBtn = document.getElementById('touch-fire-button');
         if (!base || !fireBtn) return;
