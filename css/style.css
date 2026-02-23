@@ -12,6 +12,10 @@ body {
     align-items: center;
     min-height: 100vh;
     overflow: hidden;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 
 #main-layout {
@@ -118,6 +122,15 @@ body {
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
     z-index: 10;
     background: rgba(0, 0, 0, 0.35);
+}
+
+/* Hide debug/MobileUI toolbar buttons when not in debug shell (?debug=1) */
+body.no-debug-toolbar #debug-toggle,
+body.no-debug-toolbar #debug-ai-toggle,
+body.no-debug-toolbar #auto-restart-toggle,
+body.no-debug-toolbar #debug-gbe-toggle,
+body.no-debug-toolbar #mobile-ui-toggle {
+    display: none !important;
 }
 
 #title-bar > div {

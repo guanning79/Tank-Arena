@@ -54,6 +54,8 @@ class Game {
         this.aiDebugModelInstances = document.getElementById('ai-debug-model-instances');
         this.aiDebugMoveLog = document.getElementById('ai-debug-move-log');
         this.aiEpisodeLogs = [];
+        const urlParams = new URLSearchParams(window.location.search);
+        this.isDebugShell = urlParams.get('debug') === '1';
         this.autoScale = true;
         this.showDebugBounds = false;
         this.showAIDebug = false;
@@ -150,6 +152,9 @@ class Game {
     }
     
     setupUI() {
+        if (!this.isDebugShell) {
+            document.body.classList.add('no-debug-toolbar');
+        }
         const startButton = document.getElementById('start-button');
         const restartButton = document.getElementById('restart-button');
         const autoRestartToggle = document.getElementById('auto-restart-toggle');
@@ -172,7 +177,7 @@ class Game {
                 }
             });
         }
-        if (autoRestartToggle) {
+        if (this.isDebugShell && autoRestartToggle) {
             autoRestartToggle.addEventListener('click', () => {
                 this.setAutoRestartEnabled(!this.autoRestartEnabled);
                 if (this.state === 'gameOver') {
@@ -197,13 +202,13 @@ class Game {
         document.addEventListener('webkitfullscreenchange', fullscreenChange);
         document.addEventListener('mozfullscreenchange', fullscreenChange);
         document.addEventListener('MSFullscreenChange', fullscreenChange);
-        if (this.debugToggle) {
+        if (this.isDebugShell && this.debugToggle) {
             this.debugToggle.addEventListener('click', () => this.toggleDebugBounds());
         }
-        if (debugAiToggle) {
+        if (this.isDebugShell && debugAiToggle) {
             debugAiToggle.addEventListener('click', () => this.toggleAIDebug());
         }
-        if (debugGbeToggle) {
+        if (this.isDebugShell && debugGbeToggle) {
             debugGbeToggle.addEventListener('click', () => this.toggleGBEDebug());
         }
         if (this.copySessionIdButton) {
@@ -228,7 +233,7 @@ class Game {
                 }
             });
         }
-        if (this.mobileUiToggle) {
+        if (this.isDebugShell && this.mobileUiToggle) {
             this.mobileUiToggle.addEventListener('click', () => this.toggleMobileUi());
         }
     }
